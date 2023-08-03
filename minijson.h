@@ -230,7 +230,7 @@ public:
       ss << "null";
     } else
     if (t == boolean_type) {
-      ss << u.b ? "true" : "false";
+      ss << (u.b ? "true" : "false");
     } else
     if (t == number_type) {
       ss << (double) u.d;
