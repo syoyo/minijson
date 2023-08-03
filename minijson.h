@@ -13,8 +13,8 @@
 #include <map>
 #include <vector>
 #include <sstream>
-#include <typeinfo>
-#include <string.h>
+//#include <typeinfo>
+#include <cstring>
 
 //#define __MINIJSON_LIBERAL
 
@@ -48,6 +48,45 @@ typedef std::vector<value> array;
 typedef struct {} null_t;
 
 null_t null;
+
+template<typename T>
+struct TypeTraits;
+
+template<>
+struct TypeTraits<null_t>
+{
+  static constexpr uint32_t type_id() { return 0; }
+};
+
+template<>
+struct TypeTraits<boolean>
+{
+  static constexpr uint32_t type_id() { return 1; }
+};
+
+template<>
+struct TypeTraits<number>
+{
+  static constexpr uint32_t type_id() { return 2; }
+};
+
+template<>
+struct TypeTraits<string>
+{
+  static constexpr uint32_t type_id() { return 3; }
+};
+
+template<>
+struct TypeTraits<object>
+{
+  static constexpr uint32_t type_id() { return 4; }
+};
+
+template<>
+struct TypeTraits<array>
+{
+  static constexpr uint32_t type_id() { return 5; }
+};
 
 class value {
 private:
@@ -97,11 +136,11 @@ public:
 
   template<typename T>
   bool is() const {
-    if (typeid(T) == typeid(null) && t == null_type) return true;
-    if (typeid(T) == typeid(true) && t == boolean_type) return true;
-    if (typeid(T) == typeid(0.0) && t == number_type) return true;
-    if (typeid(T) == typeid(string()) && t == string_type) return true;
-    if (typeid(T) == typeid(object()) && t == object_type) return true;
+    if (TypeTraits<T>::type_id() == TypeTraits<null_t>::type_id() && t == null_type) return true;
+    if (TypeTraits<T>::type_id() == TypeTraits<bool>::type_id() && t == boolean_type) return true;
+    if (TypeTraits<T>::type_id() == TypeTraits<double>::type_id() && t == number_type) return true;
+    if (TypeTraits<T>::type_id() == TypeTraits<string>::type_id() && t == string_type) return true;
+    if (TypeTraits<T>::type_id() == TypeTraits<object>::type_id() && t == object_type) return true;
     return false;
   }
 
@@ -307,7 +346,7 @@ parse_null(Iter& i, value& v) {
   Iter p = i;
   if (*i == 'n' && *(i+1) == 'u' && *(i+2) == 'l' && *(i+3) == 'l') {
     i += 4;
-    v = null;
+    v = null_t();
   }
   if (*i && nullptr == strchr(":,\x7d]\r\n ", *i)) {
     i = p;
@@ -380,7 +419,7 @@ parse_string(Iter& i, value& v) {
   char t = *i++;
   Iter p = i;
   std::stringstream ss;
-  
+
   while (*i && *i != t) {
     if (*i == '\\' && *(i+1)) {
       i++;

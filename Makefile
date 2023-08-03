@@ -3,8 +3,8 @@ SRCS = \
 
 OBJS = $(subst .cc,.o,$(subst .cxx,.o,$(subst .cpp,.o,$(SRCS))))
 
-CXXFLAGS = -std=c++17
-LIBS = 
+CXXFLAGS = -std=c++14 -fno-rtti -fno-exceptions
+LIBS =
 TARGET = minijson
 ifeq ($(OS),Windows_NT)
 TARGET := $(TARGET).exe
