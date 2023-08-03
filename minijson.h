@@ -36,6 +36,7 @@ typedef enum {
   invalid_token_error,
   unknown_type_error,
   memory_allocation_error,
+  corrupted_json_error,
 } error;
 
 class value;
@@ -281,12 +282,14 @@ parse_object(Iter& i, value& v) {
   object o;
   i++;
   _MINIJSON_SKIP(i);
+  if (!(*i)) { return corrupted_json_error; };
   if (*i != '\x7d') {
     while (*i) {
       value vk, vv;
       error e = parse_string(i, vk);
       if (e != no_error) return e;
       _MINIJSON_SKIP(i);
+      if (!(*i)) { return corrupted_json_error; };
       if (*i != ':') return invalid_token_error;
       i++;
       e = parse_any(i, vv);
@@ -299,10 +302,12 @@ parse_object(Iter& i, value& v) {
       o[vk.get<std::string>()] = vv;
 #endif
       _MINIJSON_SKIP(i);
+      if (!(*i)) { return corrupted_json_error; };
       if (*i == '\x7d') break;
       if (*i != ',') return invalid_token_error;
       i++;
       _MINIJSON_SKIP(i);
+      if (!(*i)) { return corrupted_json_error; };
 #ifdef __MINIJSON_LIBERAL
       if (*i == '\x7d') break;
 #endif
@@ -319,6 +324,7 @@ parse_array(Iter& i, value& v) {
   array a;
   i++;
   _MINIJSON_SKIP(i);
+  if (!(*i)) { return corrupted_json_error; };
   if (*i != ']') {
     while (*i) {
       value va;
@@ -326,10 +332,12 @@ parse_array(Iter& i, value& v) {
       if (e != no_error) return e;
       a.push_back(va);
       _MINIJSON_SKIP(i);
+      if (!(*i)) { return corrupted_json_error; };
       if (*i == ']') break;
       if (*i != ',') return invalid_token_error;
       i++;
       _MINIJSON_SKIP(i);
+      if (!(*i)) { return corrupted_json_error; };
 #ifdef __MINIJSON_LIBERAL
       if (*i == '\x7d') break;
 #endif

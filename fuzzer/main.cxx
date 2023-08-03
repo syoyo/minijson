@@ -10,6 +10,12 @@ static int parse_json(const uint8_t* data, size_t size) {
 		return - 1;
 	}
 
+	// Up to 4GB
+	if (size > (1024ull * 1024ull * 1024ull * 4))
+	{
+		return -1;
+	}
+
 	value v;
 	std::string s(data, data + size);
 
