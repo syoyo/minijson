@@ -5,7 +5,11 @@
 #include "minijson.h"
 using namespace minijson;
 
-static void parse_json(const uint8_t* data, size_t size) {
+static int parse_json(const uint8_t* data, size_t size) {
+	if (size < 2) {
+		return - 1;
+	}
+
 	value v;
 	std::string s(data, data + size);
 
@@ -13,11 +17,11 @@ static void parse_json(const uint8_t* data, size_t size) {
 	error e = parse_string(ptr, v);
 	(void)e;
 
-	return;
+	return 0;
 }
 
 extern "C" int LLVMFuzzerTestOneInput(std::uint8_t const* data,
 				      std::size_t size) {
-	parse_json(data, size);
-	return 0;
+	int ret = parse_json(data, size);
+	return ret;
 }

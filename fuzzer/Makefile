@@ -6,7 +6,7 @@ OBJS = $(subst .cc,.o,$(subst .cxx,.o,$(subst .cpp,.o,$(SRCS))))
 CXX=clang++
 CC=clang
 
-CXXFLAGS = -fsanitize=address,fuzzer -I../ -std=c++14 -fno-rtti -fno-exceptions
+CXXFLAGS = -fsanitize=address,fuzzer -g -O1 -I../ -std=c++14 -fno-rtti -fno-exceptions
 LDFLAGS = -fsanitize=address,fuzzer
 LIBS =
 TARGET = fuzz_minijson
