@@ -101,6 +101,12 @@ private:
     object* o;
   } u;
 
+  void _free_u() {
+    if (t == string_type) { delete this->u.s; this->u.s = nullptr; }
+    if (t == array_type) { delete this->u.a; this->u.a = nullptr; }
+    if (t == object_type) { delete this->u.o; this->u.o = nullptr; }
+  }
+
 public:
   value() : t(unknown_type), u() {}
   value(null_t n) : t(null_type), u() { u.n = n; }
@@ -124,9 +130,7 @@ public:
       u.d = v.u.d;
   }
   ~value() {
-    if (t == string_type) delete this->u.s;
-    if (t == array_type) delete this->u.a;
-    if (t == object_type) delete this->u.o;
+    _free_u();
   }
 
 #if defined(_MSC_VER) && _MSC_VER <= 6000
@@ -178,26 +182,31 @@ public:
     return u.d;
   }
   const std::string& operator=(const char* s) {
+    _free_u();
     t = string_type;
     u.s = new string(s);
     return *u.s;
   }
   const string& operator=(const string& s) {
+    _free_u();
     t = string_type;
     u.s = new string(s);
     return *u.s;
   }
   const object& operator=(const object& o) {
+    _free_u();
     t = object_type;
     u.o = new object(o);
     return *u.o;
   }
   const array& operator=(const array& a) {
+    _free_u();
     t = array_type;
     u.a = new array(a);
     return *u.a;
   }
   const value& operator=(const value& v) {
+    _free_u();
     t = v.t;
     if (t == array_type) {
       u.a = new array(*v.u.a);
