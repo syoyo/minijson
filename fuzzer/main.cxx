@@ -14,7 +14,7 @@ static int parse_json(const uint8_t* data, size_t size) {
 	std::string s(data, data + size);
 
 	const char* ptr = s.c_str();
-	error e = parse_string(ptr, v);
+	error e = parse(ptr, v);
 	(void)e;
 
 	return 0;
