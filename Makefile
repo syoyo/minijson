@@ -3,7 +3,7 @@ SRCS = \
 
 OBJS = $(subst .cc,.o,$(subst .cxx,.o,$(subst .cpp,.o,$(SRCS))))
 
-CXXFLAGS = -std=c++14 -fno-rtti -fno-exceptions
+CXXFLAGS = -Weverything -Werror -Wno-padded -Wno-c++98-compat  -Wno-c++98-compat-pedantic -std=c++14 -fno-rtti -fno-exceptions
 LIBS =
 TARGET = minijson
 ifeq ($(OS),Windows_NT)
@@ -15,16 +15,16 @@ endif
 all : $(TARGET)
 
 $(TARGET) : $(OBJS)
-	g++ -o $@ $(OBJS) $(LIBS)
+	clang++ -o $@ $(OBJS) $(LIBS)
 
 .cxx.o :
-	g++ -c $(CXXFLAGS) -I. $< -o $@
+	clang++ -c $(CXXFLAGS) -I. $< -o $@
 
 .cpp.o :
-	g++ -c $(CXXFLAGS) -I. $< -o $@
+	clang++ -c $(CXXFLAGS) -I. $< -o $@
 
 .cc.o :
-	g++ -c $(CXXFLAGS) -I. $< -o $@
+	clang++ -c $(CXXFLAGS) -I. $< -o $@
 
 clean :
 	rm -f *.o $(TARGET)

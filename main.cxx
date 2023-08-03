@@ -22,7 +22,7 @@ main(int /*argc*/, char* /*argv*/[]) {
   value v;
   error e = parse(p, v);
   if (e != no_error) {
-    std::cerr << errstr(e) << "(" << (int) (p - foo) << "):" << p << std::endl;
+    std::cerr << errstr(e) << "(" << int(p - foo) << "):" << p << std::endl;
     return 1;
   }
   while (*p && strchr("\r\n \t", *p)) { p++; }
@@ -45,7 +45,7 @@ main(int /*argc*/, char* /*argv*/[]) {
   array& a = o["rrr"].get<array>();
 #endif
   a.push_back("3.0");
-  a.push_back(null);
+  a.push_back(null_t());
   o.erase(o.find("foo"));
   std::cout << v.str() << std::endl;
   return 0;
