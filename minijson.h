@@ -4,16 +4,10 @@
 #ifndef minijson_h
 #define minijson_h
 
-#if defined(_MSC_VER) && _MSC_VER <= 6000
-#pragma warning(push)
-#pragma warning(disable: 4786)
-#endif
-
 #include <string>
 #include <map>
 #include <vector>
 #include <sstream>
-//#include <typeinfo>
 #include <cstring>
 
 //#define __MINIJSON_LIBERAL
@@ -48,7 +42,7 @@ typedef std::map<string, value> object;
 typedef std::vector<value> array;
 typedef struct {} null_t;
 
-null_t null;
+//null_t null;
 
 template<typename T>
 struct TypeTraits;
@@ -133,38 +127,23 @@ public:
     _free_u();
   }
 
-#if defined(_MSC_VER) && _MSC_VER <= 6000
-  bool is(type _t) const {
-    return t == _t;
-  }
-#endif
-
   template<typename T>
   bool is() const {
     if (TypeTraits<T>::type_id() == TypeTraits<null_t>::type_id() && t == null_type) return true;
-    if (TypeTraits<T>::type_id() == TypeTraits<bool>::type_id() && t == boolean_type) return true;
-    if (TypeTraits<T>::type_id() == TypeTraits<double>::type_id() && t == number_type) return true;
+    if (TypeTraits<T>::type_id() == TypeTraits<boolean>::type_id() && t == boolean_type) return true;
+    if (TypeTraits<T>::type_id() == TypeTraits<number>::type_id() && t == number_type) return true;
     if (TypeTraits<T>::type_id() == TypeTraits<string>::type_id() && t == string_type) return true;
     if (TypeTraits<T>::type_id() == TypeTraits<object>::type_id() && t == object_type) return true;
     return false;
   }
 
-#if defined(_MSC_VER) && _MSC_VER <= 6000
-  template<typename T>
-  void get(T& r) const {
-    if (t == array_type) r = *(T*)(void*)u.a;
-    else if (t == object_type) r = *(T*)(void*)u.o;
-    else if (t == string_type) r = *(T*)(void*)u.s;
-    else r = *(T*)(void*)(&u.d);
-  }
-#endif
-
+  // TODO: type-safe get.
   template<typename T>
   T& get() const {
-    if (t == array_type) return *(T*)(void*)u.a;
-    if (t == object_type) return *(T*)(void*)u.o;
-    if (t == string_type) return *(T*)(void*)u.s;
-    return *(T*)(void*)(&u.d);
+    if (t == array_type) return *reinterpret_cast<T*>(const_cast<array *>(u.a));
+    if (t == object_type) return *reinterpret_cast<T*>(u.o);
+    if (t == string_type) return *reinterpret_cast<T*>(u.s);
+    return *reinterpret_cast<T*>(const_cast<number *>(&u.d));
   }
   null_t& operator=(null_t& n) {
     t = null_type;
@@ -243,7 +222,7 @@ public:
       ss << (u.b ? "true" : "false");
     } else
     if (t == number_type) {
-      ss << (double) u.d;
+      ss << double( u.d );
     } else
     if (t == string_type) {
       ss << str(u.s->c_str());
@@ -251,12 +230,7 @@ public:
     if (t == array_type) {
       array::iterator i;
       ss << "[";
-#if defined(_MSC_VER) && _MSC_VER <= 6000
-      array& a = array();
-      get(a);
-#else
       array a = get<array>();
-#endif
       for (i = a.begin(); i != a.end(); i++) {
         if (i != a.begin()) ss << ", ";
         ss << i->str();
@@ -266,12 +240,7 @@ public:
     if (t == object_type) {
       object::iterator i;
       ss << "{";
-#if defined(_MSC_VER) && _MSC_VER <= 6000
-      object& o = object();
-      get(o);
-#else
       object o = get<object>();
-#endif
       for (i = o.begin(); i != o.end(); i++) {
         if (i != o.begin()) ss << ", ";
         ss << str(i->first.c_str());
@@ -283,40 +252,34 @@ public:
   }
 };
 
-#define _MINIJSON_SKIP(i) while (*i && strchr("\r\n \t", *i)) { i++; }
+#define MINIJSON_SKIP(i) while (*i && strchr("\r\n \t", *i)) { i++; }
 
 template<typename Iter>
 inline error
 parse_object(Iter& i, value& v) {
   object o;
   i++;
-  _MINIJSON_SKIP(i);
-  if (!(*i)) { return corrupted_json_error; };
+  MINIJSON_SKIP(i)
+  if (!(*i)) { return corrupted_json_error; }
   if (*i != '\x7d') {
     while (*i) {
       value vk, vv;
       error e = parse_string(i, vk);
       if (e != no_error) return e;
-      _MINIJSON_SKIP(i);
-      if (!(*i)) { return corrupted_json_error; };
+      MINIJSON_SKIP(i)
+      if (!(*i)) { return corrupted_json_error; }
       if (*i != ':') return invalid_token_error;
       i++;
       e = parse_any(i, vv);
       if (e != no_error) return e;
-#if defined(_MSC_VER) && _MSC_VER <= 6000
-      string s;
-      vk.get(s);
-      o[s] = vv;
-#else
       o[vk.get<std::string>()] = vv;
-#endif
-      _MINIJSON_SKIP(i);
-      if (!(*i)) { return corrupted_json_error; };
+      MINIJSON_SKIP(i)
+      if (!(*i)) { return corrupted_json_error; }
       if (*i == '\x7d') break;
       if (*i != ',') return invalid_token_error;
       i++;
-      _MINIJSON_SKIP(i);
-      if (!(*i)) { return corrupted_json_error; };
+      MINIJSON_SKIP(i)
+      if (!(*i)) { return corrupted_json_error; }
 #ifdef __MINIJSON_LIBERAL
       if (*i == '\x7d') break;
 #endif
@@ -332,21 +295,21 @@ inline error
 parse_array(Iter& i, value& v) {
   array a;
   i++;
-  _MINIJSON_SKIP(i);
-  if (!(*i)) { return corrupted_json_error; };
+  MINIJSON_SKIP(i)
+  if (!(*i)) { return corrupted_json_error; }
   if (*i != ']') {
     while (*i) {
       value va;
       error e = parse_any(i, va);
       if (e != no_error) return e;
       a.push_back(va);
-      _MINIJSON_SKIP(i);
-      if (!(*i)) { return corrupted_json_error; };
+      MINIJSON_SKIP(i)
+      if (!(*i)) { return corrupted_json_error; }
       if (*i == ']') break;
       if (*i != ',') return invalid_token_error;
       i++;
-      _MINIJSON_SKIP(i);
-      if (!(*i)) { return corrupted_json_error; };
+      MINIJSON_SKIP(i)
+      if (!(*i)) { return corrupted_json_error; }
 #ifdef __MINIJSON_LIBERAL
       if (*i == '\x7d') break;
 #endif
@@ -378,10 +341,10 @@ parse_boolean(Iter& i, value& v) {
   Iter p = i;
   if (*i == 't' && *(i+1) == 'r' && *(i+2) == 'u' && *(i+3) == 'e') {
     i += 4;
-    v = (boolean) true;
+    v = static_cast<boolean>(true);
   } else if (*i == 'f' && *(i+1) == 'a' && *(i+2) == 'l' && *(i+3) == 's' && *(i+4) == 'e') {
     i += 5;
-    v = (boolean) false;
+    v = static_cast<boolean>(false);
   }
   if (*i && nullptr == strchr(":,\x7d]\r\n ", *i)) {
     i = p;
@@ -395,31 +358,31 @@ inline error
 parse_number(Iter& i, value& v) {
   Iter p = i;
 
-#define _IS_NUM(x)  ('0' <= x && x <= '9')
-#define _IS_ALNUM(x)  (('0' <= x && x <= '9') || ('a' <= x && x <= 'f') || ('A' <= x && x <= 'F'))
-  if (*i == '0' && *(i + 1) == 'x' && _IS_ALNUM(*(i+2))) {
+#define MINIJSON_IS_NUM(x)  ('0' <= x && x <= '9')
+#define MINIJSON_IS_ALNUM(x)  (('0' <= x && x <= '9') || ('a' <= x && x <= 'f') || ('A' <= x && x <= 'F'))
+  if (*i == '0' && *(i + 1) == 'x' && MINIJSON_IS_ALNUM(*(i+2))) {
     i += 3;
-    while (_IS_ALNUM(*i)) i++;
-    v = (number) strtod(p, nullptr);
+    while (MINIJSON_IS_ALNUM(*i)) i++;
+    v = static_cast<number>(strtod(p, nullptr));
   } else {
-    while (_IS_NUM(*i)) i++;
+    while (MINIJSON_IS_NUM(*i)) i++;
     if (*i == '.') {
       i++;
-      if (!_IS_NUM(*i)) {
+      if (!MINIJSON_IS_NUM(*i)) {
         i = p;
         return invalid_token_error;
       }
-      while (_IS_NUM(*i)) i++;
+      while (MINIJSON_IS_NUM(*i)) i++;
     }
     if (*i == 'e') {
       i++;
-      if (!_IS_NUM(*i)) {
+      if (!MINIJSON_IS_NUM(*i)) {
         i = p;
         return invalid_token_error;
       }
-      while (_IS_NUM(*i)) i++;
+      while (MINIJSON_IS_NUM(*i)) i++;
     }
-    v = (number) strtod(p, nullptr);
+    v = static_cast<number>(strtod(p, nullptr));
   }
   if (*i && nullptr == strchr(":,\x7d]\r\n ", *i)) {
     i = p;
@@ -450,7 +413,10 @@ parse_string(Iter& i, value& v) {
     i++;
   }
   if (!*i) return invalid_token_error;
-  v = std::string(p, i-p);
+  if (i < p) {
+    return corrupted_json_error;
+  }
+  v = std::string(p, size_t(i-p));
   i++;
   if (*i && nullptr == strchr(":,\x7d]\r\n ", *i)) {
     i = p;
@@ -462,7 +428,7 @@ parse_string(Iter& i, value& v) {
 template<typename Iter>
 inline error
 parse_any(Iter& i, value& v) {
-  _MINIJSON_SKIP(i);
+  MINIJSON_SKIP(i)
   if (*i == '\x7b') return parse_object(i, v);
   if (*i == '[') return parse_array(i, v);
   if (*i == 't' || *i == 'f') return parse_boolean(i, v);
@@ -478,24 +444,25 @@ parse(Iter& i, value& v) {
   return parse_any(i, v);
 }
 
-#undef _MINIJSON_SKIP
+#undef MINIJSON_SKIP
 
 inline const char*
 errstr(error e) {
+  const char *s = "unknown error";
   switch (e) {
-  case no_error: return "no error";
-  case undefined_error: return "undefined";
-  case invalid_token_error: return "invalid token";
-  case unknown_type_error: return "unknown type";
-  case memory_allocation_error: return "memory allocation error";
-  default: return "unknown error";
+  case no_error: { s = "no error"; break; }
+  case undefined_error: { s = "undefined"; break; }
+  case invalid_token_error: { s = "invalid token"; break; }
+  case unknown_type_error: { s = "unknown type"; break; }
+  case memory_allocation_error: { s = "memory allocation error"; break; }
+  case corrupted_json_error: { s = "input is corrupted"; break; }
+  //default: return "unknown error";
   }
-}
+
+  return s;
 
 }
 
-#if defined(_MSC_VER) && _MSC_VER <= 6000
-#pragma warning(pop)
-#endif
+} // namespace minijson
 
 #endif /* minijson_h */
