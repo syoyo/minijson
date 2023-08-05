@@ -1,6 +1,9 @@
 #include <iostream>
 #include <algorithm>
+
+#define MINIJSON_IMPLEMENTATION
 #include "minijson.h"
+
 using namespace minijson;
 
 int

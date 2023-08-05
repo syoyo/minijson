@@ -19,6 +19,13 @@ The pointer p will be shift to the end of token. So it is the caller's responsib
 
 MIT
 
+### Third party licenses
+
+* from_chars Apache 2.0 license.
+* to_chars MIT license
+
 ## Author
 
 Yasuhiro Matsumoto
+
+Modification by Syoyo Fujita.

@@ -14,17 +14,8 @@ endif
 
 all : $(TARGET)
 
-$(TARGET) : $(OBJS)
-	clang++ -o $@ $(OBJS) $(LIBS)
-
-.cxx.o :
-	clang++ -c $(CXXFLAGS) -I. $< -o $@
-
-.cpp.o :
-	clang++ -c $(CXXFLAGS) -I. $< -o $@
-
-.cc.o :
-	clang++ -c $(CXXFLAGS) -I. $< -o $@
+$(TARGET) : minijson.h
+	clang++ -o $@ main.cxx
 
 clean :
 	rm -f *.o $(TARGET)
