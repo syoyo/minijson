@@ -534,6 +534,7 @@ const char *my_strchr(const char *p, int ch) {
 #if !defined(MINIJSON_USE_STRTOD)
 
 #include <cstring>
+#include <limits>
 
 namespace simdjson {
 namespace internal {
