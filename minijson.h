@@ -4,10 +4,10 @@
 #ifndef minijson_h
 #define minijson_h
 
-#include <string>
 #include <map>
-#include <vector>
 #include <sstream>
+#include <string>
+#include <vector>
 
 //#define __MINIJSON_LIBERAL
 
@@ -26,19 +26,97 @@ double from_chars(const char *first, const char *end) noexcept;
 
 char *to_chars(char *first, const char *last, double value);
 
-} // internal
-} // simdjson
+}  // namespace internal
+}  // namespace simdjson
 
 #endif
 
 namespace minijson {
+
+// Simple C++ implementation of Python's OrderedDict like dictonary
+// (preserves key insertion order)
+// Modified for JSON:
+// - No duplicated key allowed
+
+template <typename T>
+class ordered_dict {
+ public:
+  bool at(const size_t idx, T *dst) const {
+    if (idx >= _keys.size()) {
+      return false;
+    }
+
+    if (!_m.count(_keys[idx])) {
+      // This should not happen though.
+      return false;
+    }
+
+    (*dst) = _m.at(_keys[idx]);
+
+    return true;
+  }
+
+  bool count(const std::string &key) const { return _m.count(key); }
+
+  void insert(const std::string &key, const T &value) {
+    if (_m.count(key)) {
+      // overwrite existing value
+    } else {
+      _keys.push_back(key);
+    }
+
+    _m[key] = value;
+  }
+
+  void insert(const std::string &key, T &&value) {
+    if (_m.count(key)) {
+      // overwrite existing value
+    } else {
+      _keys.push_back(key);
+    }
+
+    _m[key] = std::move(value);
+  }
+
+  bool at(const std::string &key, T *dst) const {
+    if (!_m.count(key)) {
+      // This should not happen though.
+      return false;
+    }
+
+    (*dst) = _m.at(key);
+
+    return true;
+  }
+
+  const std::vector<std::string> &keys() const { return _keys; }
+
+  size_t size() const { return _m.size(); }
+
+  bool erase(const std::string &key) {
+    // simple linear search
+    for (size_t i = 0; i < _keys.size(); i++) {
+      if (_keys[i] == key) {
+        _keys.erase(_keys.begin() + i);
+        _m.erase(key);
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+ private:
+  std::vector<std::string> _keys;
+  std::map<std::string, T> _m;
+};
 
 namespace detail {
 
 double from_chars(const char *p);
 const char *my_strchr(const char *p, int ch);
 
-}
+}  // namespace detail
 
 typedef enum {
   unknown_type,
@@ -57,6 +135,7 @@ typedef enum {
   unknown_type_error,
   memory_allocation_error,
   corrupted_json_error,
+  duplicated_key_error,
 } error;
 
 class value;
@@ -64,79 +143,85 @@ class value;
 typedef bool boolean;
 typedef double number;
 typedef std::string string;
-typedef std::map<string, value> object;
+typedef ordered_dict<value> object;
 typedef std::vector<value> array;
-typedef struct {} null_t;
+typedef struct {
+} null_t;
 
-//null_t null;
+// null_t null;
 
-template<typename T>
+template <typename T>
 struct TypeTraits;
 
-template<>
-struct TypeTraits<null_t>
-{
+template <>
+struct TypeTraits<null_t> {
   static constexpr uint32_t type_id() { return 0; }
 };
 
-template<>
-struct TypeTraits<boolean>
-{
+template <>
+struct TypeTraits<boolean> {
   static constexpr uint32_t type_id() { return 1; }
 };
 
-template<>
-struct TypeTraits<number>
-{
+template <>
+struct TypeTraits<number> {
   static constexpr uint32_t type_id() { return 2; }
 };
 
-template<>
-struct TypeTraits<string>
-{
+template <>
+struct TypeTraits<string> {
   static constexpr uint32_t type_id() { return 3; }
 };
 
-template<>
-struct TypeTraits<object>
-{
+template <>
+struct TypeTraits<object> {
   static constexpr uint32_t type_id() { return 4; }
 };
 
-template<>
-struct TypeTraits<array>
-{
+template <>
+struct TypeTraits<array> {
   static constexpr uint32_t type_id() { return 5; }
 };
 
 class value {
-private:
+ private:
   type t;
   union {
     null_t n;
     boolean b;
     number d;
-    string* s;
-    array* a;
-    object* o;
+    std::string *s;
+    array *a;
+    object *o;
   } u;
 
   void _free_u() {
-    if (t == string_type) { delete this->u.s; this->u.s = nullptr; }
-    if (t == array_type) { delete this->u.a; this->u.a = nullptr; }
-    if (t == object_type) { delete this->u.o; this->u.o = nullptr; }
+    if (t == string_type) {
+      delete this->u.s;
+      this->u.s = nullptr;
+    }
+    if (t == array_type) {
+      delete this->u.a;
+      this->u.a = nullptr;
+    }
+    if (t == object_type) {
+      delete this->u.o;
+      this->u.o = nullptr;
+    }
   }
 
-public:
+ public:
   value() : t(unknown_type), u() {}
   value(null_t n) : t(null_type), u() { u.n = n; }
   value(boolean b) : t(boolean_type), u() { u.b = b; }
   value(number d) : t(boolean_type), u() { u.d = d; }
-  value(const char* s) : t(string_type), u() { u.s = new string(s); }
-  value(const string& s) : t(string_type), u() { u.s = new string(s); }
-  value(const array& a) : t(array_type), u() { u.a = new array(a); }
-  value(const object& o) : t(object_type), u() { u.o = new object(o); }
-  value(const value& v) : t(v.t), u() {
+  value(const char *s) : t(string_type), u() { u.s = new std::string(s); }
+  value(const std::string &s) : t(string_type), u() {
+    u.s = new std::string(s);
+  }
+  value(const array &a) : t(array_type), u() { u.a = new array(a); }
+  value(const object &o) : t(object_type), u() { u.o = new object(o); }
+  value(const value &v) : t(v.t), u() {
     if (t == array_type) {
       u.a = new array();
       *u.a = *v.u.a;
@@ -144,73 +229,146 @@ public:
       u.o = new object();
       *u.o = *v.u.o;
     } else if (t == string_type) {
-      u.s = new string();
+      u.s = new std::string();
       *u.s = *v.u.s;
     } else
       u.d = v.u.d;
   }
-  ~value() {
-    _free_u();
-  }
+  ~value() { _free_u(); }
 
-  template<typename T>
+  template <typename T>
   bool is() const {
-    if (TypeTraits<T>::type_id() == TypeTraits<null_t>::type_id() && t == null_type) return true;
-    if (TypeTraits<T>::type_id() == TypeTraits<boolean>::type_id() && t == boolean_type) return true;
-    if (TypeTraits<T>::type_id() == TypeTraits<number>::type_id() && t == number_type) return true;
-    if (TypeTraits<T>::type_id() == TypeTraits<string>::type_id() && t == string_type) return true;
-    if (TypeTraits<T>::type_id() == TypeTraits<object>::type_id() && t == object_type) return true;
+    if (TypeTraits<T>::type_id() == TypeTraits<null_t>::type_id() &&
+        t == null_type)
+      return true;
+    if (TypeTraits<T>::type_id() == TypeTraits<boolean>::type_id() &&
+        t == boolean_type)
+      return true;
+    if (TypeTraits<T>::type_id() == TypeTraits<number>::type_id() &&
+        t == number_type)
+      return true;
+    if (TypeTraits<T>::type_id() == TypeTraits<std::string>::type_id() &&
+        t == string_type)
+      return true;
+    if (TypeTraits<T>::type_id() == TypeTraits<array>::type_id() &&
+        t == array_type)
+      return true;
+    if (TypeTraits<T>::type_id() == TypeTraits<object>::type_id() &&
+        t == object_type)
+      return true;
     return false;
   }
 
-  // TODO: type-safe get.
-  template<typename T>
-  T& get() const {
-    if (t == array_type) return *reinterpret_cast<T*>(const_cast<array *>(u.a));
-    if (t == object_type) return *reinterpret_cast<T*>(u.o);
-    if (t == string_type) return *reinterpret_cast<T*>(u.s);
-    return *reinterpret_cast<T*>(const_cast<number *>(&u.d));
+  template <typename T>
+  const T *as() const {
+    if ((t == array_type) &&
+        (TypeTraits<T>::type_id() == TypeTraits<array>::type_id())) {
+      return reinterpret_cast<const T *>(u.a);
+    }
+
+    if ((t == object_type) &&
+        (TypeTraits<T>::type_id() == TypeTraits<object>::type_id())) {
+      return reinterpret_cast<const T *>(u.o);
+    }
+
+    if ((t == string_type) &&
+        (TypeTraits<T>::type_id() == TypeTraits<std::string>::type_id())) {
+      return reinterpret_cast<const T *>(u.s);
+    }
+
+    if ((t == null_type) &&
+        (TypeTraits<T>::type_id() == TypeTraits<null_t>::type_id())) {
+      return reinterpret_cast<const T *>(&u.n);
+    }
+
+    if ((t == boolean_type) &&
+        (TypeTraits<T>::type_id() == TypeTraits<boolean>::type_id())) {
+      return reinterpret_cast<const T *>(&u.b);
+    }
+
+    if ((t == number_type) &&
+        (TypeTraits<T>::type_id() == TypeTraits<number>::type_id())) {
+      return reinterpret_cast<const T *>(&u.d);
+    }
+
+    return nullptr;
   }
-  null_t& operator=(null_t& n) {
+
+  template <typename T>
+  T *as() {
+    if ((t == array_type) &&
+        (TypeTraits<T>::type_id() == TypeTraits<array>::type_id())) {
+      return reinterpret_cast<T *>(u.a);
+    }
+
+    if ((t == object_type) &&
+        (TypeTraits<T>::type_id() == TypeTraits<object>::type_id())) {
+      return reinterpret_cast<T *>(u.o);
+    }
+
+    if ((t == string_type) &&
+        (TypeTraits<T>::type_id() == TypeTraits<string>::type_id())) {
+      return reinterpret_cast<T *>(u.s);
+    }
+
+    if ((t == null_type) &&
+        (TypeTraits<T>::type_id() == TypeTraits<null_t>::type_id())) {
+      return reinterpret_cast<T *>(&u.n);
+    }
+
+    if ((t == boolean_type) &&
+        (TypeTraits<T>::type_id() == TypeTraits<boolean>::type_id())) {
+      return reinterpret_cast<T *>(&u.b);
+    }
+
+    if ((t == number_type) &&
+        (TypeTraits<T>::type_id() == TypeTraits<number>::type_id())) {
+      return reinterpret_cast<T *>(&u.d);
+    }
+
+    return nullptr;
+  }
+
+  null_t &operator=(null_t &n) {
     t = null_type;
     u.n = n;
     return u.n;
   }
-  boolean& operator=(boolean b) {
+  boolean &operator=(boolean b) {
     t = boolean_type;
     u.b = b;
     return u.b;
   }
-  number& operator=(number d) {
+  number &operator=(number d) {
     t = number_type;
     u.d = d;
     return u.d;
   }
-  const std::string& operator=(const char* s) {
+  const std::string &operator=(const char *s) {
     _free_u();
     t = string_type;
-    u.s = new string(s);
+    u.s = new std::string(s);
     return *u.s;
   }
-  const string& operator=(const string& s) {
+  const std::string &operator=(const std::string &s) {
     _free_u();
     t = string_type;
-    u.s = new string(s);
+    u.s = new std::string(s);
     return *u.s;
   }
-  const object& operator=(const object& o) {
+  const object &operator=(const object &o) {
     _free_u();
     t = object_type;
     u.o = new object(o);
     return *u.o;
   }
-  const array& operator=(const array& a) {
+  const array &operator=(const array &a) {
     _free_u();
     t = array_type;
     u.a = new array(a);
     return *u.a;
   }
-  const value& operator=(const value& v) {
+  const value &operator=(const value &v) {
     _free_u();
     t = v.t;
     if (t == array_type) {
@@ -218,59 +376,94 @@ public:
     } else if (t == object_type) {
       u.o = new object(*v.u.o);
     } else if (t == string_type) {
-      u.s = new string(*v.u.s);
-    } else u.d = v.u.d;
+      u.s = new std::string(*v.u.s);
+    } else
+      u.d = v.u.d;
     return *this;
   }
-  std::string str(const char* p) const {
+
+  std::string type_name() const {
+    if (t == array_type) {
+      return "array";
+    }
+
+    if (t == object_type) {
+      return "object";
+    }
+
+    if (t == string_type) {
+      return "string";
+    }
+
+    if (t == null_type) {
+      return "null";
+    }
+
+    if (t == boolean_type) {
+      return "boolean";
+    }
+
+    if (t == number_type) {
+      return "number";
+    }
+
+    return "[[invalid]]";
+  }
+
+  std::string str(const char *p) const {
     std::stringstream ss;
     ss << '"';
     while (*p) {
       if (*p == '\n') ss << "\\n";
       if (*p == '\r') ss << "\\r";
-      if (*p == '\t') ss << "\\t";
-      else if (detail::my_strchr("\"", *p)) ss << "\\" << *p;
-      else ss << *p;
+      if (*p == '\t')
+        ss << "\\t";
+      else if (detail::my_strchr("\"", *p))
+        ss << "\\" << *p;
+      else
+        ss << *p;
       p++;
     }
     ss << '"';
     return ss.str();
   }
+
   std::string str() const {
     std::stringstream ss;
     if (t == unknown_type) {
       ss << "undefined";
-    } else
-    if (t == null_type) {
+    } else if (t == null_type) {
       ss << "null";
-    } else
-    if (t == boolean_type) {
+    } else if (t == boolean_type) {
       ss << (u.b ? "true" : "false");
-    } else
-    if (t == number_type) {
-      ss << double( u.d );
-    } else
-    if (t == string_type) {
+    } else if (t == number_type) {
+      ss << double(u.d);
+    } else if (t == string_type) {
       ss << str(u.s->c_str());
-    } else
-    if (t == array_type) {
-      array::iterator i;
+    } else if (const array *pa = as<array>()) {
+      array::const_iterator i;
       ss << "[";
-      array a = get<array>();
-      for (i = a.begin(); i != a.end(); i++) {
-        if (i != a.begin()) ss << ", ";
+      // array a = get<array>();
+      for (i = pa->begin(); i != pa->end(); i++) {
+        if (i != pa->begin()) ss << ", ";
         ss << i->str();
       }
       ss << "]";
-    } else
-    if (t == object_type) {
-      object::iterator i;
+    } else if (auto po = as<object>()) {
+      // object::const_iterator i;
       ss << "{";
-      object o = get<object>();
-      for (i = o.begin(); i != o.end(); i++) {
-        if (i != o.begin()) ss << ", ";
-        ss << str(i->first.c_str());
-        ss << ": " << i->second.str();
+      // object o = get<object>();
+      for (size_t i = 0; i < po->size(); i++) {
+        if (i > 0) ss << ", ";
+        ss << po->keys()[i];
+
+        value v;
+        if (po->at(i, &v)) {
+          ss << ": " << v.str();
+        } else {
+          // TODO: report error
+          ss << ": null";
+        }
       }
       ss << "}";
     }
@@ -278,34 +471,54 @@ public:
   }
 };
 
-#define MINIJSON_SKIP(i) while (*i && detail::my_strchr("\r\n \t", *i)) { i++; }
+#define MINIJSON_SKIP(i)                           \
+  while (*i && detail::my_strchr("\r\n \t", *i)) { \
+    i++;                                           \
+  }
 
-template<typename Iter>
-inline error
-parse_object(Iter& i, value& v) {
+template <typename Iter>
+inline error parse_object(Iter &i, value &v) {
   object o;
   i++;
   MINIJSON_SKIP(i)
-  if (!(*i)) { return corrupted_json_error; }
+  if (!(*i)) {
+    return corrupted_json_error;
+  }
   if (*i != '\x7d') {
     while (*i) {
       value vk, vv;
       error e = parse_string(i, vk);
       if (e != no_error) return e;
       MINIJSON_SKIP(i)
-      if (!(*i)) { return corrupted_json_error; }
+      if (!(*i)) {
+        return corrupted_json_error;
+      }
       if (*i != ':') return invalid_token_error;
       i++;
       e = parse_any(i, vv);
       if (e != no_error) return e;
-      o[vk.get<std::string>()] = vv;
+
+      auto ps = vk.as<std::string>();
+      if (!ps) {
+        return unknown_type_error;
+      }
+
+      if (o.count(*ps)) {
+        return duplicated_key_error;
+      }
+      o.insert(*ps, vv);
+
       MINIJSON_SKIP(i)
-      if (!(*i)) { return corrupted_json_error; }
+      if (!(*i)) {
+        return corrupted_json_error;
+      }
       if (*i == '\x7d') break;
       if (*i != ',') return invalid_token_error;
       i++;
       MINIJSON_SKIP(i)
-      if (!(*i)) { return corrupted_json_error; }
+      if (!(*i)) {
+        return corrupted_json_error;
+      }
 #ifdef __MINIJSON_LIBERAL
       if (*i == '\x7d') break;
 #endif
@@ -316,13 +529,14 @@ parse_object(Iter& i, value& v) {
   return no_error;
 }
 
-template<typename Iter>
-inline error
-parse_array(Iter& i, value& v) {
+template <typename Iter>
+inline error parse_array(Iter &i, value &v) {
   array a;
   i++;
   MINIJSON_SKIP(i)
-  if (!(*i)) { return corrupted_json_error; }
+  if (!(*i)) {
+    return corrupted_json_error;
+  }
   if (*i != ']') {
     while (*i) {
       value va;
@@ -330,12 +544,16 @@ parse_array(Iter& i, value& v) {
       if (e != no_error) return e;
       a.push_back(va);
       MINIJSON_SKIP(i)
-      if (!(*i)) { return corrupted_json_error; }
+      if (!(*i)) {
+        return corrupted_json_error;
+      }
       if (*i == ']') break;
       if (*i != ',') return invalid_token_error;
       i++;
       MINIJSON_SKIP(i)
-      if (!(*i)) { return corrupted_json_error; }
+      if (!(*i)) {
+        return corrupted_json_error;
+      }
 #ifdef __MINIJSON_LIBERAL
       if (*i == '\x7d') break;
 #endif
@@ -346,11 +564,10 @@ parse_array(Iter& i, value& v) {
   return no_error;
 }
 
-template<typename Iter>
-inline error
-parse_null(Iter& i, value& v) {
+template <typename Iter>
+inline error parse_null(Iter &i, value &v) {
   Iter p = i;
-  if (*i == 'n' && *(i+1) == 'u' && *(i+2) == 'l' && *(i+3) == 'l') {
+  if (*i == 'n' && *(i + 1) == 'u' && *(i + 2) == 'l' && *(i + 3) == 'l') {
     i += 4;
     v = null_t();
   }
@@ -361,14 +578,14 @@ parse_null(Iter& i, value& v) {
   return no_error;
 }
 
-template<typename Iter>
-inline error
-parse_boolean(Iter& i, value& v) {
+template <typename Iter>
+inline error parse_boolean(Iter &i, value &v) {
   Iter p = i;
-  if (*i == 't' && *(i+1) == 'r' && *(i+2) == 'u' && *(i+3) == 'e') {
+  if (*i == 't' && *(i + 1) == 'r' && *(i + 2) == 'u' && *(i + 3) == 'e') {
     i += 4;
     v = static_cast<boolean>(true);
-  } else if (*i == 'f' && *(i+1) == 'a' && *(i+2) == 'l' && *(i+3) == 's' && *(i+4) == 'e') {
+  } else if (*i == 'f' && *(i + 1) == 'a' && *(i + 2) == 'l' &&
+             *(i + 3) == 's' && *(i + 4) == 'e') {
     i += 5;
     v = static_cast<boolean>(false);
   }
@@ -379,14 +596,14 @@ parse_boolean(Iter& i, value& v) {
   return no_error;
 }
 
-template<typename Iter>
-inline error
-parse_number(Iter& i, value& v) {
+template <typename Iter>
+inline error parse_number(Iter &i, value &v) {
   Iter p = i;
 
-#define MINIJSON_IS_NUM(x)  ('0' <= x && x <= '9')
-#define MINIJSON_IS_ALNUM(x)  (('0' <= x && x <= '9') || ('a' <= x && x <= 'f') || ('A' <= x && x <= 'F'))
-  if (*i == '0' && *(i + 1) == 'x' && MINIJSON_IS_ALNUM(*(i+2))) {
+#define MINIJSON_IS_NUM(x) ('0' <= x && x <= '9')
+#define MINIJSON_IS_ALNUM(x) \
+  (('0' <= x && x <= '9') || ('a' <= x && x <= 'f') || ('A' <= x && x <= 'F'))
+  if (*i == '0' && *(i + 1) == 'x' && MINIJSON_IS_ALNUM(*(i + 2))) {
     i += 3;
     while (MINIJSON_IS_ALNUM(*i)) i++;
     v = static_cast<number>(detail::from_chars(p));
@@ -417,9 +634,8 @@ parse_number(Iter& i, value& v) {
   return no_error;
 }
 
-template<typename Iter>
-inline error
-parse_string(Iter& i, value& v) {
+template <typename Iter>
+inline error parse_string(Iter &i, value &v) {
   if (*i != '"') return invalid_token_error;
 
   char t = *i++;
@@ -427,12 +643,16 @@ parse_string(Iter& i, value& v) {
   std::stringstream ss;
 
   while (*i && *i != t) {
-    if (*i == '\\' && *(i+1)) {
+    if (*i == '\\' && *(i + 1)) {
       i++;
-      if (*i == 'n') ss << "\n";
-      else if (*i == 'r') ss << "\r";
-      else if (*i == 't') ss << "\t";
-      else ss << *i;
+      if (*i == 'n')
+        ss << "\n";
+      else if (*i == 'r')
+        ss << "\r";
+      else if (*i == 't')
+        ss << "\t";
+      else
+        ss << *i;
     } else {
       ss << *i;
     }
@@ -442,7 +662,7 @@ parse_string(Iter& i, value& v) {
   if (i < p) {
     return corrupted_json_error;
   }
-  v = std::string(p, size_t(i-p));
+  v = std::string(p, size_t(i - p));
   i++;
   if (*i && nullptr == detail::my_strchr(":,\x7d]\r\n ", *i)) {
     i = p;
@@ -451,9 +671,8 @@ parse_string(Iter& i, value& v) {
   return no_error;
 }
 
-template<typename Iter>
-inline error
-parse_any(Iter& i, value& v) {
+template <typename Iter>
+inline error parse_any(Iter &i, value &v) {
   MINIJSON_SKIP(i)
   if (*i == '\x7b') return parse_object(i, v);
   if (*i == '[') return parse_array(i, v);
@@ -464,40 +683,755 @@ parse_any(Iter& i, value& v) {
   return invalid_token_error;
 }
 
-template<typename Iter>
-inline error
-parse(Iter& i, value& v) {
+template <typename Iter>
+inline error parse(Iter &i, value &v) {
   return parse_any(i, v);
 }
 
 #undef MINIJSON_SKIP
 
-inline const char*
-errstr(error e) {
+inline const char *errstr(error e) {
   const char *s = "unknown error";
   switch (e) {
-  case no_error: { s = "no error"; break; }
-  case undefined_error: { s = "undefined"; break; }
-  case invalid_token_error: { s = "invalid token"; break; }
-  case unknown_type_error: { s = "unknown type"; break; }
-  case memory_allocation_error: { s = "memory allocation error"; break; }
-  case corrupted_json_error: { s = "input is corrupted"; break; }
-  //default: return "unknown error";
+    case no_error: {
+      s = "no error";
+      break;
+    }
+    case undefined_error: {
+      s = "undefined";
+      break;
+    }
+    case invalid_token_error: {
+      s = "invalid token";
+      break;
+    }
+    case unknown_type_error: {
+      s = "unknown type";
+      break;
+    }
+    case memory_allocation_error: {
+      s = "memory allocation error";
+      break;
+    }
+    case corrupted_json_error: {
+      s = "input is corrupted";
+      break;
+    }
+    case duplicated_key_error: {
+      s = "duplicated key found";
+      break;
+    }
+      // default: return "unknown error";
   }
 
   return s;
-
 }
 
-} // namespace minijson
+}  // namespace minijson
 
 #if defined(MINIJSON_IMPLEMENTATION)
 
 namespace minijson {
+
+namespace detail {
+
+//
+// Usage:
+//  - set_input()
+//  - scan_string()
+//    - success: use `token_buffer` string
+//    - error: use `error_message`
+//
+struct string_parser {
+
+  // input string must be UTF-8
+  void set_input(const std::string &s) {
+    _input = s;
+  }
+
+  bool scan_string();
+
+  void reset() {
+    if (_input.size()) {
+      current = _input[0];
+    } else {
+      current = '\0';
+    }
+    curr_idx = 0;
+    token_buffer.clear();
+  }
+
+  char get() {
+    if (curr_idx < _input.size()) {
+      return _input[curr_idx];
+      curr_idx++;
+    }
+    return '\0'; 
+  }
+
+  bool eof() {
+    if (_input.empty()) {
+      return true;
+    }
+
+    if (curr_idx >= _input.size()) {
+      return true;
+    }
+
+    return false;
+  }
+  
+  void add(const char c) {
+    token_buffer += c;
+  }
+
+  void add(const int i) {
+    // use lower 8bit
+    token_buffer += static_cast<char>(static_cast<unsigned char>(i & 0xff));
+  }
+
+  const int get_codepoint() const {
+    // TODO
+    return -1;
+  }
+
+  bool next_byte_in_range(const std::vector<int> &range) {
+    // TODO
+    return false;
+  }
+
+  std::string error_message;
+  std::string token_buffer; // output
+
+  char current{'\0'};
+  size_t curr_idx{0};
+  std::string _input;
+};
+
+// clang-format off
+//
+// From json.hpp ---------------------------------------------------------
+// License: MIT
+
+#if 1
+    #define JSON_HEDLEY_UNLIKELY(cond) (cond)
+    #define JSON_HEDLEY_LIKELY(cond) (cond)
+    /*!
+    @brief scan a string literal
+
+    This function scans a string according to Sect. 7 of RFC 8259. While
+    scanning, bytes are escaped and copied into buffer token_buffer. Then the
+    function returns successfully, token_buffer is *not* null-terminated (as it
+    may contain \0 bytes), and token_buffer.size() is the number of bytes in the
+    string.
+
+    @return true if string could be successfully scanned,
+            false otherwise
+
+    @note In case of errors, variable error_message contains a textual
+          description.
+    */
+    bool string_parser::scan_string()
+    {
+        // reset token_buffer (ignore opening quote)
+        reset();
+
+        // we entered the function by reading an open quote
+        //JSON_ASSERT(current == '\"');
+        if (current != '\"') {
+            error_message = "first character must be '\"'";
+            return false;
+        }
+
+
+        while (eof())
+        {
+            // get next character
+            switch (get())
+            {
+
+                // closing quote
+                case '\"':
+                {
+                    return true;
+                }
+
+                // escapes
+                case '\\':
+                {
+                    switch (get())
+                    {
+                        // quotation mark
+                        case '\"':
+                            add('\"');
+                            break;
+                        // reverse solidus
+                        case '\\':
+                            add('\\');
+                            break;
+                        // solidus
+                        case '/':
+                            add('/');
+                            break;
+                        // backspace
+                        case 'b':
+                            add('\b');
+                            break;
+                        // form feed
+                        case 'f':
+                            add('\f');
+                            break;
+                        // line feed
+                        case 'n':
+                            add('\n');
+                            break;
+                        // carriage return
+                        case 'r':
+                            add('\r');
+                            break;
+                        // tab
+                        case 't':
+                            add('\t');
+                            break;
+
+                        // unicode escapes
+                        case 'u':
+                        {
+                            const int codepoint1 = get_codepoint();
+                            int codepoint = codepoint1; // start with codepoint1
+
+                            if (JSON_HEDLEY_UNLIKELY(codepoint1 == -1))
+                            {
+                                error_message = "invalid string: '\\u' must be followed by 4 hex digits";
+                                return false;
+                            }
+
+                            // check if code point is a high surrogate
+                            if (0xD800 <= codepoint1 && codepoint1 <= 0xDBFF)
+                            {
+                                // expect next \uxxxx entry
+                                if (JSON_HEDLEY_LIKELY(get() == '\\' && get() == 'u'))
+                                {
+                                    const int codepoint2 = get_codepoint();
+
+                                    if (JSON_HEDLEY_UNLIKELY(codepoint2 == -1))
+                                    {
+                                        error_message = "invalid string: '\\u' must be followed by 4 hex digits";
+                                        return false;
+                                    }
+
+                                    // check if codepoint2 is a low surrogate
+                                    if (JSON_HEDLEY_LIKELY(0xDC00 <= codepoint2 && codepoint2 <= 0xDFFF))
+                                    {
+                                        // overwrite codepoint
+                                        codepoint = static_cast<int>(
+                                                        // high surrogate occupies the most significant 22 bits
+                                                        (static_cast<unsigned int>(codepoint1) << 10u)
+                                                        // low surrogate occupies the least significant 15 bits
+                                                        + static_cast<unsigned int>(codepoint2)
+                                                        // there is still the 0xD800, 0xDC00 and 0x10000 noise
+                                                        // in the result, so we have to subtract with:
+                                                        // (0xD800 << 10) + DC00 - 0x10000 = 0x35FDC00
+                                                        - 0x35FDC00u);
+                                    }
+                                    else
+                                    {
+                                        error_message = "invalid string: surrogate U+D800..U+DBFF must be followed by U+DC00..U+DFFF";
+                                        return false;
+                                    }
+                                }
+                                else
+                                {
+                                    error_message = "invalid string: surrogate U+D800..U+DBFF must be followed by U+DC00..U+DFFF";
+                                    return false;
+                                }
+                            }
+                            else
+                            {
+                                if (JSON_HEDLEY_UNLIKELY(0xDC00 <= codepoint1 && codepoint1 <= 0xDFFF))
+                                {
+                                    error_message = "invalid string: surrogate U+DC00..U+DFFF must follow U+D800..U+DBFF";
+                                    return false;
+                                }
+                            }
+
+                            // result of the above calculation yields a proper codepoint
+                            //JSON_ASSERT(0x00 <= codepoint && codepoint <= 0x10FFFF);
+                            if (0x00 <= codepoint && codepoint <= 0x10FFFF) {
+                            } else {
+                                error_message = "invalid string: invalid codepoint";
+                                return false;
+                            }
+
+                            // translate codepoint into bytes
+                            if (codepoint < 0x80)
+                            {
+                                // 1-byte characters: 0xxxxxxx (ASCII)
+                                add(static_cast<int>(codepoint));
+                            }
+                            else if (codepoint <= 0x7FF)
+                            {
+                                // 2-byte characters: 110xxxxx 10xxxxxx
+                                add(static_cast<int>(0xC0u | (static_cast<unsigned int>(codepoint) >> 6u)));
+                                add(static_cast<int>(0x80u | (static_cast<unsigned int>(codepoint) & 0x3Fu)));
+                            }
+                            else if (codepoint <= 0xFFFF)
+                            {
+                                // 3-byte characters: 1110xxxx 10xxxxxx 10xxxxxx
+                                add(static_cast<int>(0xE0u | (static_cast<unsigned int>(codepoint) >> 12u)));
+                                add(static_cast<int>(0x80u | ((static_cast<unsigned int>(codepoint) >> 6u) & 0x3Fu)));
+                                add(static_cast<int>(0x80u | (static_cast<unsigned int>(codepoint) & 0x3Fu)));
+                            }
+                            else
+                            {
+                                // 4-byte characters: 11110xxx 10xxxxxx 10xxxxxx 10xxxxxx
+                                add(static_cast<int>(0xF0u | (static_cast<unsigned int>(codepoint) >> 18u)));
+                                add(static_cast<int>(0x80u | ((static_cast<unsigned int>(codepoint) >> 12u) & 0x3Fu)));
+                                add(static_cast<int>(0x80u | ((static_cast<unsigned int>(codepoint) >> 6u) & 0x3Fu)));
+                                add(static_cast<int>(0x80u | (static_cast<unsigned int>(codepoint) & 0x3Fu)));
+                            }
+
+                            break;
+                        }
+
+                        // other characters after escape
+                        default:
+                            error_message = "invalid string: forbidden character after backslash";
+                            return false;
+                    }
+
+                    break;
+                }
+
+                // invalid control characters
+                case 0x00:
+                {
+                    error_message = "invalid string: control character U+0000 (NUL) must be escaped to \\u0000";
+                    return false;
+                }
+
+                case 0x01:
+                {
+                    error_message = "invalid string: control character U+0001 (SOH) must be escaped to \\u0001";
+                    return false;
+                }
+
+                case 0x02:
+                {
+                    error_message = "invalid string: control character U+0002 (STX) must be escaped to \\u0002";
+                    return false;
+                }
+
+                case 0x03:
+                {
+                    error_message = "invalid string: control character U+0003 (ETX) must be escaped to \\u0003";
+                    return false;
+                }
+
+                case 0x04:
+                {
+                    error_message = "invalid string: control character U+0004 (EOT) must be escaped to \\u0004";
+                    return false;
+                }
+
+                case 0x05:
+                {
+                    error_message = "invalid string: control character U+0005 (ENQ) must be escaped to \\u0005";
+                    return false;
+                }
+
+                case 0x06:
+                {
+                    error_message = "invalid string: control character U+0006 (ACK) must be escaped to \\u0006";
+                    return false;
+                }
+
+                case 0x07:
+                {
+                    error_message = "invalid string: control character U+0007 (BEL) must be escaped to \\u0007";
+                    return false;
+                }
+
+                case 0x08:
+                {
+                    error_message = "invalid string: control character U+0008 (BS) must be escaped to \\u0008 or \\b";
+                    return false;
+                }
+
+                case 0x09:
+                {
+                    error_message = "invalid string: control character U+0009 (HT) must be escaped to \\u0009 or \\t";
+                    return false;
+                }
+
+                case 0x0A:
+                {
+                    error_message = "invalid string: control character U+000A (LF) must be escaped to \\u000A or \\n";
+                    return false;
+                }
+
+                case 0x0B:
+                {
+                    error_message = "invalid string: control character U+000B (VT) must be escaped to \\u000B";
+                    return false;
+                }
+
+                case 0x0C:
+                {
+                    error_message = "invalid string: control character U+000C (FF) must be escaped to \\u000C or \\f";
+                    return false;
+                }
+
+                case 0x0D:
+                {
+                    error_message = "invalid string: control character U+000D (CR) must be escaped to \\u000D or \\r";
+                    return false;
+                }
+
+                case 0x0E:
+                {
+                    error_message = "invalid string: control character U+000E (SO) must be escaped to \\u000E";
+                    return false;
+                }
+
+                case 0x0F:
+                {
+                    error_message = "invalid string: control character U+000F (SI) must be escaped to \\u000F";
+                    return false;
+                }
+
+                case 0x10:
+                {
+                    error_message = "invalid string: control character U+0010 (DLE) must be escaped to \\u0010";
+                    return false;
+                }
+
+                case 0x11:
+                {
+                    error_message = "invalid string: control character U+0011 (DC1) must be escaped to \\u0011";
+                    return false;
+                }
+
+                case 0x12:
+                {
+                    error_message = "invalid string: control character U+0012 (DC2) must be escaped to \\u0012";
+                    return false;
+                }
+
+                case 0x13:
+                {
+                    error_message = "invalid string: control character U+0013 (DC3) must be escaped to \\u0013";
+                    return false;
+                }
+
+                case 0x14:
+                {
+                    error_message = "invalid string: control character U+0014 (DC4) must be escaped to \\u0014";
+                    return false;
+                }
+
+                case 0x15:
+                {
+                    error_message = "invalid string: control character U+0015 (NAK) must be escaped to \\u0015";
+                    return false;
+                }
+
+                case 0x16:
+                {
+                    error_message = "invalid string: control character U+0016 (SYN) must be escaped to \\u0016";
+                    return false;
+                }
+
+                case 0x17:
+                {
+                    error_message = "invalid string: control character U+0017 (ETB) must be escaped to \\u0017";
+                    return false;
+                }
+
+                case 0x18:
+                {
+                    error_message = "invalid string: control character U+0018 (CAN) must be escaped to \\u0018";
+                    return false;
+                }
+
+                case 0x19:
+                {
+                    error_message = "invalid string: control character U+0019 (EM) must be escaped to \\u0019";
+                    return false;
+                }
+
+                case 0x1A:
+                {
+                    error_message = "invalid string: control character U+001A (SUB) must be escaped to \\u001A";
+                    return false;
+                }
+
+                case 0x1B:
+                {
+                    error_message = "invalid string: control character U+001B (ESC) must be escaped to \\u001B";
+                    return false;
+                }
+
+                case 0x1C:
+                {
+                    error_message = "invalid string: control character U+001C (FS) must be escaped to \\u001C";
+                    return false;
+                }
+
+                case 0x1D:
+                {
+                    error_message = "invalid string: control character U+001D (GS) must be escaped to \\u001D";
+                    return false;
+                }
+
+                case 0x1E:
+                {
+                    error_message = "invalid string: control character U+001E (RS) must be escaped to \\u001E";
+                    return false;
+                }
+
+                case 0x1F:
+                {
+                    error_message = "invalid string: control character U+001F (US) must be escaped to \\u001F";
+                    return false;
+                }
+
+                // U+0020..U+007F (except U+0022 (quote) and U+005C (backspace))
+                case 0x20:
+                case 0x21:
+                case 0x23:
+                case 0x24:
+                case 0x25:
+                case 0x26:
+                case 0x27:
+                case 0x28:
+                case 0x29:
+                case 0x2A:
+                case 0x2B:
+                case 0x2C:
+                case 0x2D:
+                case 0x2E:
+                case 0x2F:
+                case 0x30:
+                case 0x31:
+                case 0x32:
+                case 0x33:
+                case 0x34:
+                case 0x35:
+                case 0x36:
+                case 0x37:
+                case 0x38:
+                case 0x39:
+                case 0x3A:
+                case 0x3B:
+                case 0x3C:
+                case 0x3D:
+                case 0x3E:
+                case 0x3F:
+                case 0x40:
+                case 0x41:
+                case 0x42:
+                case 0x43:
+                case 0x44:
+                case 0x45:
+                case 0x46:
+                case 0x47:
+                case 0x48:
+                case 0x49:
+                case 0x4A:
+                case 0x4B:
+                case 0x4C:
+                case 0x4D:
+                case 0x4E:
+                case 0x4F:
+                case 0x50:
+                case 0x51:
+                case 0x52:
+                case 0x53:
+                case 0x54:
+                case 0x55:
+                case 0x56:
+                case 0x57:
+                case 0x58:
+                case 0x59:
+                case 0x5A:
+                case 0x5B:
+                case 0x5D:
+                case 0x5E:
+                case 0x5F:
+                case 0x60:
+                case 0x61:
+                case 0x62:
+                case 0x63:
+                case 0x64:
+                case 0x65:
+                case 0x66:
+                case 0x67:
+                case 0x68:
+                case 0x69:
+                case 0x6A:
+                case 0x6B:
+                case 0x6C:
+                case 0x6D:
+                case 0x6E:
+                case 0x6F:
+                case 0x70:
+                case 0x71:
+                case 0x72:
+                case 0x73:
+                case 0x74:
+                case 0x75:
+                case 0x76:
+                case 0x77:
+                case 0x78:
+                case 0x79:
+                case 0x7A:
+                case 0x7B:
+                case 0x7C:
+                case 0x7D:
+                case 0x7E:
+                case 0x7F:
+                {
+                    add(current);
+                    break;
+                }
+
+                // U+0080..U+07FF: bytes C2..DF 80..BF
+                case 0xC2:
+                case 0xC3:
+                case 0xC4:
+                case 0xC5:
+                case 0xC6:
+                case 0xC7:
+                case 0xC8:
+                case 0xC9:
+                case 0xCA:
+                case 0xCB:
+                case 0xCC:
+                case 0xCD:
+                case 0xCE:
+                case 0xCF:
+                case 0xD0:
+                case 0xD1:
+                case 0xD2:
+                case 0xD3:
+                case 0xD4:
+                case 0xD5:
+                case 0xD6:
+                case 0xD7:
+                case 0xD8:
+                case 0xD9:
+                case 0xDA:
+                case 0xDB:
+                case 0xDC:
+                case 0xDD:
+                case 0xDE:
+                case 0xDF:
+                {
+                    if (JSON_HEDLEY_UNLIKELY(!next_byte_in_range({0x80, 0xBF})))
+                    {
+                        return false;
+                    }
+                    break;
+                }
+
+                // U+0800..U+0FFF: bytes E0 A0..BF 80..BF
+                case 0xE0:
+                {
+                    if (JSON_HEDLEY_UNLIKELY(!(next_byte_in_range({0xA0, 0xBF, 0x80, 0xBF}))))
+                    {
+                        return false;
+                    }
+                    break;
+                }
+
+                // U+1000..U+CFFF: bytes E1..EC 80..BF 80..BF
+                // U+E000..U+FFFF: bytes EE..EF 80..BF 80..BF
+                case 0xE1:
+                case 0xE2:
+                case 0xE3:
+                case 0xE4:
+                case 0xE5:
+                case 0xE6:
+                case 0xE7:
+                case 0xE8:
+                case 0xE9:
+                case 0xEA:
+                case 0xEB:
+                case 0xEC:
+                case 0xEE:
+                case 0xEF:
+                {
+                    if (JSON_HEDLEY_UNLIKELY(!(next_byte_in_range({0x80, 0xBF, 0x80, 0xBF}))))
+                    {
+                        return false;
+                    }
+                    break;
+                }
+
+                // U+D000..U+D7FF: bytes ED 80..9F 80..BF
+                case 0xED:
+                {
+                    if (JSON_HEDLEY_UNLIKELY(!(next_byte_in_range({0x80, 0x9F, 0x80, 0xBF}))))
+                    {
+                        return false;
+                    }
+                    break;
+                }
+
+                // U+10000..U+3FFFF F0 90..BF 80..BF 80..BF
+                case 0xF0:
+                {
+                    if (JSON_HEDLEY_UNLIKELY(!(next_byte_in_range({0x90, 0xBF, 0x80, 0xBF, 0x80, 0xBF}))))
+                    {
+                        return false;
+                    }
+                    break;
+                }
+
+                // U+40000..U+FFFFF F1..F3 80..BF 80..BF 80..BF
+                case 0xF1:
+                case 0xF2:
+                case 0xF3:
+                {
+                    if (JSON_HEDLEY_UNLIKELY(!(next_byte_in_range({0x80, 0xBF, 0x80, 0xBF, 0x80, 0xBF}))))
+                    {
+                        return false;
+                    }
+                    break;
+                }
+
+                // U+100000..U+10FFFF F4 80..8F 80..BF 80..BF
+                case 0xF4:
+                {
+                    if (JSON_HEDLEY_UNLIKELY(!(next_byte_in_range({0x80, 0x8F, 0x80, 0xBF, 0x80, 0xBF}))))
+                    {
+                        return false;
+                    }
+                    break;
+                }
+
+                // remaining bytes (80..C1 and F5..FF) are ill-formed
+                default:
+                {
+                    error_message = "invalid string: ill-formed UTF-8 byte";
+                    return false;
+                }
+            }
+        }
+
+        error_message = "invalid string: missing closing quote";
+        return false;
+    }
+#endif
+// end json.hpp
+// clang-format on
+
+}  // namespace detail
+
 namespace detail {
 
 double from_chars(const char *p) {
-
 #if defined(MINIJSON_USE_STRTOD)
   return strtod(p, nullptr);
 #else
@@ -506,30 +1440,29 @@ double from_chars(const char *p) {
 }
 
 const char *my_strchr(const char *p, int ch) {
-	char c;
+  char c;
 
-  constexpr uint64_t kMaxCount = 1024ull * 1024ull; // up to 1M chars
+  constexpr uint64_t kMaxCount = 1024ull * 1024ull;  // up to 1M chars
 
   uint64_t cnt{0};
 
-	c = ch;
-	for (;; ++p, cnt++) {
+  c = ch;
+  for (;; ++p, cnt++) {
     if (cnt > kMaxCount) {
       return nullptr;
     }
 
-		if (*p == c) {
-			return (p);
+    if (*p == c) {
+      return (p);
     }
-		if (*p == '\0') {
-			return (nullptr);
+    if (*p == '\0') {
+      return (nullptr);
     }
-	}
+  }
 }
 
-} // detail
-} // minijson
-
+}  // namespace detail
+}  // namespace minijson
 
 #if !defined(MINIJSON_USE_STRTOD)
 
@@ -540,14 +1473,14 @@ namespace simdjson {
 namespace internal {
 
 /**
- * The code in the internal::from_chars function is meant to handle the floating-point number parsing
- * when we have more than 19 digits in the decimal mantissa. This should only be seen
- * in adversarial scenarios: we do not expect production systems to even produce
- * such floating-point numbers.
+ * The code in the internal::from_chars function is meant to handle the
+ *floating-point number parsing when we have more than 19 digits in the decimal
+ *mantissa. This should only be seen in adversarial scenarios: we do not expect
+ *production systems to even produce such floating-point numbers.
  *
- * The parser is based on work by Nigel Tao (at https://github.com/google/wuffs/)
- * who credits Ken Thompson for the design (via a reference to the Go source
- * code). See
+ * The parser is based on work by Nigel Tao (at
+ *https://github.com/google/wuffs/) who credits Ken Thompson for the design (via
+ *a reference to the Go source code). See
  * https://github.com/google/wuffs/blob/aa46859ea40c72516deffa1b146121952d6dfd3b/internal/cgen/base/floatconv-submodule-data.c
  * https://github.com/google/wuffs/blob/46cd8105f47ca07ae2ba8e6a7818ef9c0df6c152/internal/cgen/base/floatconv-submodule-code.c
  * It is probably not very fast but it is a fallback that should almost never be
@@ -557,7 +1490,7 @@ namespace internal {
 namespace {
 constexpr uint32_t max_digits = 768;
 constexpr int32_t decimal_point_range = 2047;
-} // namespace
+}  // namespace
 
 struct adjusted_mantissa {
   uint64_t mantissa;
@@ -573,27 +1506,34 @@ struct decimal {
   uint8_t digits[max_digits];
 };
 
-template <typename T> struct binary_format {
+template <typename T>
+struct binary_format {
   static constexpr int mantissa_explicit_bits();
   static constexpr int minimum_exponent();
   static constexpr int infinite_power();
   static constexpr int sign_index();
 };
 
-template <> constexpr int binary_format<double>::mantissa_explicit_bits() {
+template <>
+constexpr int binary_format<double>::mantissa_explicit_bits() {
   return 52;
 }
 
-template <> constexpr int binary_format<double>::minimum_exponent() {
+template <>
+constexpr int binary_format<double>::minimum_exponent() {
   return -1023;
 }
-template <> constexpr int binary_format<double>::infinite_power() {
+template <>
+constexpr int binary_format<double>::infinite_power() {
   return 0x7FF;
 }
 
-template <> constexpr int binary_format<double>::sign_index() { return 63; }
+template <>
+constexpr int binary_format<double>::sign_index() {
+  return 63;
+}
 
-inline bool is_integer(char c)  noexcept  { return (c >= '0' && c <= '9'); }
+inline bool is_integer(char c) noexcept { return (c >= '0' && c <= '9'); }
 
 // This should always succeed since it follows a call to parse_number.
 static decimal parse_decimal(const char *&p) noexcept {
@@ -635,17 +1575,19 @@ static decimal parse_decimal(const char *&p) noexcept {
     }
     answer.decimal_point = int32_t(first_after_period - p);
   }
-  if(answer.num_digits > 0) {
+  if (answer.num_digits > 0) {
     const char *preverse = p - 1;
     int32_t trailing_zeros = 0;
     while ((*preverse == '0') || (*preverse == '.')) {
-      if(*preverse == '0') { trailing_zeros++; }
+      if (*preverse == '0') {
+        trailing_zeros++;
+      }
       --preverse;
     }
     answer.decimal_point += int32_t(answer.num_digits);
     answer.num_digits -= uint32_t(trailing_zeros);
   }
-  if(answer.num_digits > max_digits ) {
+  if (answer.num_digits > max_digits) {
     answer.num_digits = max_digits;
     answer.truncated = true;
   }
@@ -658,7 +1600,7 @@ static decimal parse_decimal(const char *&p) noexcept {
     } else if ('+' == *p) {
       ++p;
     }
-    int32_t exp_number = 0; // exponential part
+    int32_t exp_number = 0;  // exponential part
     while (is_integer(*p)) {
       uint8_t digit = uint8_t(*p - '0');
       if (exp_number < 0x10000) {
@@ -673,12 +1615,14 @@ static decimal parse_decimal(const char *&p) noexcept {
 
 // This should always succeed since it follows a call to parse_number.
 // Will not read at or beyond the "end" pointer.
-static decimal parse_decimal(const char *&p, const char * end) noexcept {
+static decimal parse_decimal(const char *&p, const char *end) noexcept {
   decimal answer;
   answer.num_digits = 0;
   answer.decimal_point = 0;
   answer.truncated = false;
-  if(p == end) { return answer; } // should never happen
+  if (p == end) {
+    return answer;
+  }  // should never happen
   answer.negative = (*p == '-');
   if ((*p == '-') || (*p == '+')) {
     ++p;
@@ -696,7 +1640,9 @@ static decimal parse_decimal(const char *&p, const char * end) noexcept {
   }
   if ((p != end) && (*p == '.')) {
     ++p;
-    if(p == end) { return answer; } // should never happen
+    if (p == end) {
+      return answer;
+    }  // should never happen
     const char *first_after_period = p;
     // if we have not yet encountered a zero, we have to skip it as well
     if (answer.num_digits == 0) {
@@ -714,23 +1660,27 @@ static decimal parse_decimal(const char *&p, const char * end) noexcept {
     }
     answer.decimal_point = int32_t(first_after_period - p);
   }
-  if(answer.num_digits > 0) {
+  if (answer.num_digits > 0) {
     const char *preverse = p - 1;
     int32_t trailing_zeros = 0;
     while ((*preverse == '0') || (*preverse == '.')) {
-      if(*preverse == '0') { trailing_zeros++; }
+      if (*preverse == '0') {
+        trailing_zeros++;
+      }
       --preverse;
     }
     answer.decimal_point += int32_t(answer.num_digits);
     answer.num_digits -= uint32_t(trailing_zeros);
   }
-  if(answer.num_digits > max_digits ) {
+  if (answer.num_digits > max_digits) {
     answer.num_digits = max_digits;
     answer.truncated = true;
   }
   if ((p != end) && (('e' == *p) || ('E' == *p))) {
     ++p;
-    if(p == end) { return answer; } // should never happen
+    if (p == end) {
+      return answer;
+    }  // should never happen
     bool neg_exp = false;
     if ('-' == *p) {
       neg_exp = true;
@@ -738,7 +1688,7 @@ static decimal parse_decimal(const char *&p, const char * end) noexcept {
     } else if ('+' == *p) {
       ++p;
     }
-    int32_t exp_number = 0; // exponential part
+    int32_t exp_number = 0;  // exponential part
     while ((p != end) && is_integer(*p)) {
       uint8_t digit = uint8_t(*p - '0');
       if (exp_number < 0x10000) {
@@ -855,7 +1805,7 @@ uint32_t number_of_digits_decimal_left_shift(decimal &h, uint32_t shift) {
   return num_new_digits;
 }
 
-} // end of anonymous namespace
+}  // end of anonymous namespace
 
 static uint64_t round(decimal &h) {
   if ((h.num_digits == 0) || (h.decimal_point < 0)) {
@@ -871,7 +1821,7 @@ static uint64_t round(decimal &h) {
   }
   bool round_up = false;
   if (dp < h.num_digits) {
-    round_up = h.digits[dp] >= 5; // normally, we round up
+    round_up = h.digits[dp] >= 5;  // normally, we round up
     // but we may need to round to even!
     if ((h.digits[dp] == 5) && (dp + 1 == h.num_digits)) {
       round_up = h.truncated || ((dp > 0) && (1 & h.digits[dp - 1]));
@@ -946,7 +1896,7 @@ static void decimal_right_shift(decimal &h, uint32_t shift) {
     }
   }
   h.decimal_point -= int32_t(read_index - 1);
-  if (h.decimal_point < -decimal_point_range) { // it is zero
+  if (h.decimal_point < -decimal_point_range) {  // it is zero
     h.num_digits = 0;
     h.decimal_point = 0;
     h.negative = false;
@@ -972,7 +1922,8 @@ static void decimal_right_shift(decimal &h, uint32_t shift) {
   trim(h);
 }
 
-template <typename binary> adjusted_mantissa compute_float(decimal &d) {
+template <typename binary>
+adjusted_mantissa compute_float(decimal &d) {
   adjusted_mantissa answer;
   if (d.num_digits == 0) {
     // should be zero
@@ -987,14 +1938,14 @@ template <typename binary> adjusted_mantissa compute_float(decimal &d) {
   // which is fine, but log(10**299995)/log(2**60) ~= 16609 which is not
   // fine (runs for a long time).
   //
-  if(d.decimal_point < -324) {
+  if (d.decimal_point < -324) {
     // We have something smaller than 1e-324 which is always zero
     // in binary64 and binary32.
     // It should be zero.
     answer.power2 = 0;
     answer.mantissa = 0;
     return answer;
-  } else if(d.decimal_point >= 310) {
+  } else if (d.decimal_point >= 310) {
     // We have something at least as large as 0.1e310 which is
     // always infinite.
     answer.power2 = binary::infinite_power();
@@ -1005,8 +1956,8 @@ template <typename binary> adjusted_mantissa compute_float(decimal &d) {
   static const uint32_t max_shift = 60;
   static const uint32_t num_powers = 19;
   static const uint8_t powers[19] = {
-      0,  3,  6,  9,  13, 16, 19, 23, 26, 29, //
-      33, 36, 39, 43, 46, 49, 53, 56, 59,     //
+      0,  3,  6,  9,  13, 16, 19, 23, 26, 29,  //
+      33, 36, 39, 43, 46, 49, 53, 56, 59,      //
   };
   int32_t exp2 = 0;
   while (d.decimal_point > 0) {
@@ -1112,7 +2063,6 @@ double from_chars(const char *first) noexcept {
   return value;
 }
 
-
 double from_chars(const char *first, const char *end) noexcept {
   bool negative = first[0] == '-';
   if (negative) {
@@ -1129,8 +2079,8 @@ double from_chars(const char *first, const char *end) noexcept {
   return value;
 }
 
-} // internal
-} // simdjson
+}  // namespace internal
+}  // namespace simdjson
 
 namespace simdjson {
 namespace internal {
@@ -1161,9 +2111,9 @@ Target reinterpret_bits(const Source source) {
   return target;
 }
 
-struct diyfp // f * 2^e
+struct diyfp  // f * 2^e
 {
-  static constexpr int kPrecision = 64; // = q
+  static constexpr int kPrecision = 64;  // = q
 
   std::uint64_t f = 0;
   int e = 0;
@@ -1175,7 +2125,6 @@ struct diyfp // f * 2^e
   @pre x.e == y.e and x.f >= y.f
   */
   static diyfp sub(const diyfp &x, const diyfp &y) noexcept {
-
     return {x.f - y.f, x.e};
   }
 
@@ -1237,7 +2186,7 @@ struct diyfp // f * 2^e
     // Effectively we only need to add the highest bit in p_lo to p_hi (and
     // Q_hi + 1 does not overflow).
 
-    Q += std::uint64_t{1} << (64u - 32u - 1u); // round, ties up
+    Q += std::uint64_t{1} << (64u - 32u - 1u);  // round, ties up
 
     const std::uint64_t h = p3 + p2_hi + p1_hi + (Q >> 32u);
 
@@ -1249,7 +2198,6 @@ struct diyfp // f * 2^e
   @pre x.f != 0
   */
   static diyfp normalize(diyfp x) noexcept {
-
     while ((x.f >> 63u) == 0) {
       x.f <<= 1u;
       x.e--;
@@ -1281,8 +2229,8 @@ Compute the (normalized) diyfp representing the input number 'value' and its
 boundaries.
 @pre value must be finite and positive
 */
-template <typename FloatType> boundaries compute_boundaries(FloatType value) {
-
+template <typename FloatType>
+boundaries compute_boundaries(FloatType value) {
   // Convert the IEEE representation into a diyfp.
   //
   // If v is denormal:
@@ -1295,12 +2243,12 @@ template <typename FloatType> boundaries compute_boundaries(FloatType value) {
                 "floating-point implementation");
 
   constexpr int kPrecision =
-      std::numeric_limits<FloatType>::digits; // = p (includes the hidden bit)
+      std::numeric_limits<FloatType>::digits;  // = p (includes the hidden bit)
   constexpr int kBias =
       std::numeric_limits<FloatType>::max_exponent - 1 + (kPrecision - 1);
   constexpr int kMinExp = 1 - kBias;
   constexpr std::uint64_t kHiddenBit = std::uint64_t{1}
-                                       << (kPrecision - 1); // = 2^(p-1)
+                                       << (kPrecision - 1);  // = 2^(p-1)
 
   using bits_type = typename std::conditional<kPrecision == 24, std::uint32_t,
                                               std::uint64_t>::type;
@@ -1338,8 +2286,8 @@ template <typename FloatType> boundaries compute_boundaries(FloatType value) {
   const bool lower_boundary_is_closer = F == 0 && E > 1;
   const diyfp m_plus = diyfp(2 * v.f + 1, v.e - 1);
   const diyfp m_minus = lower_boundary_is_closer
-                            ? diyfp(4 * v.f - 1, v.e - 2)  // (B)
-                            : diyfp(2 * v.f - 1, v.e - 1); // (A)
+                            ? diyfp(4 * v.f - 1, v.e - 2)   // (B)
+                            : diyfp(2 * v.f - 1, v.e - 1);  // (A)
 
   // Determine the normalized w+ = m+.
   const diyfp w_plus = diyfp::normalize(m_plus);
@@ -1408,7 +2356,7 @@ template <typename FloatType> boundaries compute_boundaries(FloatType value) {
 constexpr int kAlpha = -60;
 constexpr int kGamma = -32;
 
-struct cached_power // c = f * 2^e ~= 10^k
+struct cached_power  // c = f * 2^e ~= 10^k
 {
   std::uint64_t f;
   int e;
@@ -1577,7 +2525,6 @@ inline int find_largest_pow10(const std::uint32_t n, std::uint32_t &pow10) {
 inline void grisu2_round(char *buf, int len, std::uint64_t dist,
                          std::uint64_t delta, std::uint64_t rest,
                          std::uint64_t ten_k) {
-
   //               <--------------------------- delta ---->
   //                                  <---- dist --------->
   // --------------[------------------+-------------------]--------------
@@ -1628,10 +2575,10 @@ inline void grisu2_digit_gen(char *buffer, int &length, int &decimal_exponent,
 
   std::uint64_t delta =
       diyfp::sub(M_plus, M_minus)
-          .f; // (significand of (M+ - M-), implicit exponent is e)
+          .f;  // (significand of (M+ - M-), implicit exponent is e)
   std::uint64_t dist =
       diyfp::sub(M_plus, w)
-          .f; // (significand of (M+ - w ), implicit exponent is e)
+          .f;  // (significand of (M+ - w ), implicit exponent is e)
 
   // Split M+ = f * 2^e into two parts p1 and p2 (note: e < 0):
   //
@@ -1644,8 +2591,8 @@ inline void grisu2_digit_gen(char *buffer, int &length, int &decimal_exponent,
 
   auto p1 = static_cast<std::uint32_t>(
       M_plus.f >>
-      -one.e); // p1 = f div 2^-e (Since -e >= 32, p1 fits into a 32-bit int.)
-  std::uint64_t p2 = M_plus.f & (one.f - 1); // p2 = f mod 2^-e
+      -one.e);  // p1 = f div 2^-e (Since -e >= 32, p1 fits into a 32-bit int.)
+  std::uint64_t p2 = M_plus.f & (one.f - 1);  // p2 = f mod 2^-e
 
   // 1)
   //
@@ -1678,13 +2625,13 @@ inline void grisu2_digit_gen(char *buffer, int &length, int &decimal_exponent,
     //      M+ = buffer * 10^n + (p1 + p2 * 2^e)    (buffer = 0 for n = k)
     //      pow10 = 10^(n-1) <= p1 < 10^n
     //
-    const std::uint32_t d = p1 / pow10; // d = p1 div 10^(n-1)
-    const std::uint32_t r = p1 % pow10; // r = p1 mod 10^(n-1)
+    const std::uint32_t d = p1 / pow10;  // d = p1 div 10^(n-1)
+    const std::uint32_t r = p1 % pow10;  // r = p1 mod 10^(n-1)
     //
     //      M+ = buffer * 10^n + (d * 10^(n-1) + r) + p2 * 2^e
     //         = (buffer * 10 + d) * 10^(n-1) + (r + p2 * 2^e)
     //
-    buffer[length++] = static_cast<char>('0' + d); // buffer := buffer * 10 + d
+    buffer[length++] = static_cast<char>('0' + d);  // buffer := buffer * 10 + d
     //
     //      M+ = buffer * 10^(n-1) + (r + p2 * 2^e)
     //
@@ -1780,14 +2727,14 @@ inline void grisu2_digit_gen(char *buffer, int &length, int &decimal_exponent,
     //         (10*p2 mod 2^-e)) * 2^e
     //
     p2 *= 10;
-    const std::uint64_t d = p2 >> -one.e;     // d = (10 * p2) div 2^-e
-    const std::uint64_t r = p2 & (one.f - 1); // r = (10 * p2) mod 2^-e
+    const std::uint64_t d = p2 >> -one.e;      // d = (10 * p2) div 2^-e
+    const std::uint64_t r = p2 & (one.f - 1);  // r = (10 * p2) mod 2^-e
     //
     //      M+ = buffer * 10^-m + 10^-m * (1/10 * (d * 2^-e + r) * 2^e
     //         = buffer * 10^-m + 10^-m * (1/10 * (d + r * 2^e))
     //         = (buffer * 10 + d) * 10^(-m-1) + 10^(-m-1) * r * 2^e
     //
-    buffer[length++] = static_cast<char>('0' + d); // buffer := buffer * 10 + d
+    buffer[length++] = static_cast<char>('0' + d);  // buffer := buffer * 10 + d
     //
     //      M+ = buffer * 10^(-m-1) + 10^(-m-1) * r * 2^e
     //
@@ -1844,7 +2791,6 @@ The buffer must be large enough, i.e. >= max_digits10.
 */
 inline void grisu2(char *buf, int &len, int &decimal_exponent, diyfp m_minus,
                    diyfp v, diyfp m_plus) {
-
   //  --------(-----------------------+-----------------------)--------    (A)
   //          m-                      v                       m+
   //
@@ -1856,7 +2802,7 @@ inline void grisu2(char *buf, int &len, int &decimal_exponent, diyfp m_minus,
 
   const cached_power cached = get_cached_power_for_binary_exponent(m_plus.e);
 
-  const diyfp c_minus_k(cached.f, cached.e); // = c ~= 10^-k
+  const diyfp c_minus_k(cached.f, cached.e);  // = c ~= 10^-k
 
   // The exponent of the products is = v.e + c_minus_k.e + q and is in the range
   // [alpha,gamma]
@@ -1888,7 +2834,7 @@ inline void grisu2(char *buf, int &len, int &decimal_exponent, diyfp m_minus,
   const diyfp M_minus(w_minus.f + 1, w_minus.e);
   const diyfp M_plus(w_plus.f - 1, w_plus.e);
 
-  decimal_exponent = -cached.k; // = -(-k) = k
+  decimal_exponent = -cached.k;  // = -(-k) = k
 
   grisu2_digit_gen(buf, len, decimal_exponent, M_minus, w, M_plus);
 }
@@ -1937,7 +2883,6 @@ void grisu2(char *buf, int &len, int &decimal_exponent, FloatType value) {
 @pre -1000 < e < 1000
 */
 inline char *append_exponent(char *buf, int e) {
-
   if (e < 0) {
     e = -e;
     *buf++ = '-';
@@ -1975,7 +2920,6 @@ notation. Otherwise it will be printed in exponential notation.
 */
 inline char *format_buffer(char *buf, int len, int decimal_exponent,
                            int min_exp, int max_exp) {
-
   const int k = len;
   const int n = len + decimal_exponent;
 
@@ -2033,7 +2977,7 @@ inline char *format_buffer(char *buf, int len, int decimal_exponent,
   return append_exponent(buf, n - 1);
 }
 
-} // namespace dtoa_impl
+}  // namespace dtoa_impl
 
 /*!
 The format of the resulting decimal representation is similar to printf's %g
@@ -2043,9 +2987,9 @@ format. Returns an iterator pointing past-the-end of the decimal representation.
 @note The result is NOT null-terminated.
 */
 char *to_chars(char *first, const char *last, double value) {
-  static_cast<void>(last); // maybe unused - fix warning
+  static_cast<void>(last);  // maybe unused - fix warning
 
-  //bool negative = std::signbit(value);
+  // bool negative = std::signbit(value);
   bool negative = (*reinterpret_cast<uint64_t *>(&value)) & (1 << 31ull);
   if (negative) {
     value = -value;
@@ -2057,7 +3001,7 @@ char *to_chars(char *first, const char *last, double value) {
 #pragma clang diagnostic ignored "-Wfloat-equal"
 #endif
 
-  if (value == 0) // +-0
+  if (value == 0)  // +-0
   {
     *first++ = '0';
     // Make it look like a floating-point number (#362, #378)
@@ -2084,11 +3028,11 @@ char *to_chars(char *first, const char *last, double value) {
   return dtoa_impl::format_buffer(first, len, decimal_exponent, kMinExp,
                                   kMaxExp);
 }
-} // namespace internal
-} // namespace simdjson
+}  // namespace internal
+}  // namespace simdjson
 
-#endif // !MINIJSON_USE_STRTOD
+#endif  // !MINIJSON_USE_STRTOD
 
-#endif // MINIJSON_IMPLEMENTATION
+#endif  // MINIJSON_IMPLEMENTATION
 
 #endif /* minijson_h */

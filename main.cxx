@@ -34,22 +34,22 @@ main(int /*argc*/, char* /*argv*/[]) {
     return 1;
   }
 
-#if defined(_MSC_VER) && _MSC_VER <= 6000
-  object& o = object();
-  v.get(o);
-#else
-  object& o = v.get<object>();
-#endif
-  o["momo"] = "3.0";
-#if defined(_MSC_VER) && _MSC_VER <= 6000
-  array& a = array();
-  o["rrr"].get(a);
-#else
-  array& a = o["rrr"].get<array>();
-#endif
-  a.push_back("3.0");
-  a.push_back(null_t());
-  o.erase(o.find("foo"));
+  if (object *po = v.as<object>()) {
+    po->insert("momo", "3.0");
+
+    if (po->count("rrr")) {
+      value av;
+      if (po->at("rrr", &av)) {
+        if (array *pa = av.as<array>()) {
+	  pa->push_back("3.0");
+	  pa->push_back(null_t());
+	  po->insert("rrr", *pa);
+
+	  po->erase("foo");
+	}
+      }
+    }
+  }
   std::cout << v.str() << std::endl;
   return 0;
 }
