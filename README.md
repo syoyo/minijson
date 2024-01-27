@@ -1,6 +1,17 @@
 # minijson
 
-minimal JSON parser
+minimal but secure JSON parser
+
+## Features
+
+* Single header-only.
+* minimal STL dependency.
+* No C++ RTTI and C++ exceptions
+  * Easy to embed to your app.
+* Fuzz tested
+  * Parser should not crash for invalid/malcious input.
+* Support UTF8 Unicode escape sequence(`\uXXXX`)
+* Robust parsing of floating point string.
 
 ## Limitation
 
