@@ -2,12 +2,16 @@
 
 minimal JSON parser
 
+## Limitation
+
+* Duplicated key is not allowed
+
 ## Usage
 
 ```cpp
 const char* foo = R"(
 {"empty":{"":[]}, "foo":
-3.2, "bar": "baz", "baz": true,"hoge":{"a":"あい\nうお\2え"}, "moge": null, "zz": 0xff
+3.2, "bar": "baz", "baz": true,"hoge":{"a":"あい\nうおえ"}, "moge": null, "zz": 255
 , "rrr":[[2,"3"], "4"], "fuba": 1e9}
 )";
 minijson::error e = minijson::parse(p, v);
@@ -23,9 +27,20 @@ MIT
 
 * from_chars Apache 2.0 license.
 * to_chars MIT license
+* parse escaped characters: nlohmann json. MIT license. https://github.com/nlohmann/json
 
 ## Author
 
 Yasuhiro Matsumoto
 
 Modification by Syoyo Fujita.
+
+## TODO
+
+* [x] Unicode escape sequence and other escape characters.
+  * Thanks to nlohmann json's scan_string()
+* [ ] Harden parse() API
+  * Only allow string with length parameter
+* [ ] Write robust JSON writer
+  * [ ] Escape unicode character
+

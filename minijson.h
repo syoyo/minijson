@@ -4,6 +4,7 @@
 #ifndef minijson_h
 #define minijson_h
 
+#include <iostream>
 #include <map>
 #include <sstream>
 #include <string>
@@ -115,6 +116,75 @@ namespace detail {
 
 double from_chars(const char *p);
 const char *my_strchr(const char *p, int ch);
+
+}  // namespace detail
+
+namespace detail {
+
+//
+// Usage:
+//  - set_input()
+//  - scan_string()
+//    - success: use `token_buffer` string
+//    - error: use `error_message`
+//
+struct string_parser {
+  // input string must be UTF-8
+  void set_input(const std::string &s) { _input = s; }
+
+  bool scan_string();
+
+  void reset() {
+    if (_input.size()) {
+      current = _input[0];
+    } else {
+      current = '\0';
+    }
+    curr_idx = 0;
+    token_buffer.clear();
+  }
+
+  // fetch next token.
+  unsigned char get() {
+    if ((curr_idx + 1) < _input.size()) {
+      curr_idx++;
+      current = _input[curr_idx];
+      return current;
+    }
+    current = '\0';
+    return current;
+  }
+
+  bool eof() {
+    if (_input.empty()) {
+      return true;
+    }
+
+    if (curr_idx >= _input.size()) {
+      return true;
+    }
+
+    return false;
+  }
+
+  void add(const unsigned char c) { token_buffer += c; }
+
+  void add(const int i) {
+    // use lower 8bit
+    token_buffer += static_cast<unsigned char>(i & 0xff);
+  }
+
+  int get_codepoint();
+
+  bool next_byte_in_range(const std::initializer_list<int> ranges);
+
+  std::string error_message;
+  std::string token_buffer;  // output
+
+  unsigned char current{'\0'};
+  size_t curr_idx{0};
+  std::string _input;
+};
 
 }  // namespace detail
 
@@ -414,14 +484,17 @@ class value {
     std::stringstream ss;
     ss << '"';
     while (*p) {
-      if (*p == '\n') ss << "\\n";
-      if (*p == '\r') ss << "\\r";
-      if (*p == '\t')
+      if (*p == '\n') {
+        ss << "\\n";
+      } else if (*p == '\r') {
+        ss << "\\r";
+      } else if (*p == '\t') {
         ss << "\\t";
-      else if (detail::my_strchr("\"", *p))
+      } else if (detail::my_strchr("\"", *p)) {
         ss << "\\" << *p;
-      else
+      } else {
         ss << *p;
+      }
       p++;
     }
     ss << '"';
@@ -455,7 +528,7 @@ class value {
       // object o = get<object>();
       for (size_t i = 0; i < po->size(); i++) {
         if (i > 0) ss << ", ";
-        ss << po->keys()[i];
+        ss << "\"" << po->keys()[i] << "\"";
 
         value v;
         if (po->at(i, &v)) {
@@ -638,10 +711,12 @@ template <typename Iter>
 inline error parse_string(Iter &i, value &v) {
   if (*i != '"') return invalid_token_error;
 
-  char t = *i++;
+  Iter s = i;
+  char t = *i++;  // = '"'
   Iter p = i;
-  std::stringstream ss;
 
+#if 0
+  std::stringstream ss;
   while (*i && *i != t) {
     if (*i == '\\' && *(i + 1)) {
       i++;
@@ -658,16 +733,54 @@ inline error parse_string(Iter &i, value &v) {
     }
     i++;
   }
+#else
+  // read until '"'
+  while (*i && *i != t) {
+    if (*i == '\\' && *(i + 1)) {
+      i++;
+    }
+    i++;
+  }
+
+#endif
   if (!*i) return invalid_token_error;
   if (i < p) {
     return corrupted_json_error;
   }
+
+#if 0
   v = std::string(p, size_t(i - p));
+
   i++;
   if (*i && nullptr == detail::my_strchr(":,\x7d]\r\n ", *i)) {
     i = p;
     return invalid_token_error;
   }
+
+#else
+
+  i++;
+  if (*i && nullptr == detail::my_strchr(":,\x7d]\r\n ", *i)) {
+    i = p;
+    return invalid_token_error;
+  }
+
+  // include first and last '"' char
+  std::string buf(s, size_t(i - s));
+
+  detail::string_parser str_parser;
+  str_parser.set_input(buf);
+
+  if (!str_parser.scan_string()) {
+    // TODO: error message
+    // str_parser.error_message;
+    return invalid_token_error;
+  } else {
+    v = str_parser.token_buffer;
+  }
+
+#endif
+
   return no_error;
 }
 
@@ -735,87 +848,115 @@ namespace minijson {
 
 namespace detail {
 
-//
-// Usage:
-//  - set_input()
-//  - scan_string()
-//    - success: use `token_buffer` string
-//    - error: use `error_message`
-//
-struct string_parser {
-
-  // input string must be UTF-8
-  void set_input(const std::string &s) {
-    _input = s;
-  }
-
-  bool scan_string();
-
-  void reset() {
-    if (_input.size()) {
-      current = _input[0];
-    } else {
-      current = '\0';
-    }
-    curr_idx = 0;
-    token_buffer.clear();
-  }
-
-  char get() {
-    if (curr_idx < _input.size()) {
-      return _input[curr_idx];
-      curr_idx++;
-    }
-    return '\0'; 
-  }
-
-  bool eof() {
-    if (_input.empty()) {
-      return true;
-    }
-
-    if (curr_idx >= _input.size()) {
-      return true;
-    }
-
-    return false;
-  }
-  
-  void add(const char c) {
-    token_buffer += c;
-  }
-
-  void add(const int i) {
-    // use lower 8bit
-    token_buffer += static_cast<char>(static_cast<unsigned char>(i & 0xff));
-  }
-
-  const int get_codepoint() const {
-    // TODO
-    return -1;
-  }
-
-  bool next_byte_in_range(const std::vector<int> &range) {
-    // TODO
-    return false;
-  }
-
-  std::string error_message;
-  std::string token_buffer; // output
-
-  char current{'\0'};
-  size_t curr_idx{0};
-  std::string _input;
-};
-
 // clang-format off
 //
 // From json.hpp ---------------------------------------------------------
-// License: MIT
+//     __ _____ _____ _____
+//  __|  |   __|     |   | |  JSON for Modern C++
+// |  |  |__   |  |  | | | |  version 3.11.3
+// |_____|_____|_____|_|___|  https://github.com/nlohmann/json
+//
+// SPDX-FileCopyrightText: 2013-2023 Niels Lohmann <https://nlohmann.me>
+// SPDX-License-Identifier: MIT
 
 #if 1
     #define JSON_HEDLEY_UNLIKELY(cond) (cond)
     #define JSON_HEDLEY_LIKELY(cond) (cond)
+
+    /*!
+    @brief get codepoint from 4 hex characters following `\u`
+
+    For input "\u c1 c2 c3 c4" the codepoint is:
+      (c1 * 0x1000) + (c2 * 0x0100) + (c3 * 0x0010) + c4
+    = (c1 << 12) + (c2 << 8) + (c3 << 4) + (c4 << 0)
+
+    Furthermore, the possible characters '0'..'9', 'A'..'F', and 'a'..'f'
+    must be converted to the integers 0x0..0x9, 0xA..0xF, 0xA..0xF, resp. The
+    conversion is done by subtracting the offset (0x30, 0x37, and 0x57)
+    between the ASCII value of the character and the desired integer value.
+
+    @return codepoint (0x0000..0xFFFF) or -1 in case of an error (e.g. EOF or
+            non-hex character)
+    */
+    int string_parser::get_codepoint() 
+    {
+        // this function only makes sense after reading `\u`
+        //JSON_ASSERT(current == 'u');
+        if (current != 'u') {
+          return -1;
+        }
+        int codepoint = 0;
+
+        const auto factors = { 12u, 8u, 4u, 0u };
+        for (const auto factor : factors)
+        {
+            get();
+
+            if (current >= '0' && current <= '9')
+            {
+                codepoint += static_cast<int>((static_cast<unsigned int>(current) - 0x30u) << factor);
+            }
+            else if (current >= 'A' && current <= 'F')
+            {
+                codepoint += static_cast<int>((static_cast<unsigned int>(current) - 0x37u) << factor);
+            }
+            else if (current >= 'a' && current <= 'f')
+            {
+                codepoint += static_cast<int>((static_cast<unsigned int>(current) - 0x57u) << factor);
+            }
+            else
+            {
+                return -1;
+            }
+        }
+
+        if (0x0000 <= codepoint && codepoint <= 0xFFFF) {
+        } else {
+          return -1;
+        }
+        return codepoint;
+    }
+
+    /*!
+    @brief check if the next byte(s) are inside a given range
+
+    Adds the current byte and, for each passed range, reads a new byte and
+    checks if it is inside the range. If a violation was detected, set up an
+    error message and return false. Otherwise, return true.
+
+    @param[in] ranges  list of integers; interpreted as list of pairs of
+                       inclusive lower and upper bound, respectively
+
+    @pre The passed list @a ranges must have 2, 4, or 6 elements; that is,
+         1, 2, or 3 pairs. This precondition is enforced by an assertion.
+
+    @return true if and only if no range violation was detected
+    */
+    bool string_parser::next_byte_in_range(const std::initializer_list<int> ranges)
+    {
+        if (ranges.size() == 2 || ranges.size() == 4 || ranges.size() == 6) {
+        } else {
+          return false;
+        }
+
+        add(current);
+
+        for (auto range = ranges.begin(); range != ranges.end(); ++range)
+        {
+            get();
+            if (JSON_HEDLEY_LIKELY(*range <= current && current <= *(++range))) // NOLINT(bugprone-inc-dec-in-conditions)
+            {
+                add(current);
+            }
+            else
+            {
+                error_message = "invalid string: ill-formed UTF-8 byte";
+                return false;
+            }
+        }
+
+        return true;
+    }
     /*!
     @brief scan a string literal
 
@@ -844,8 +985,9 @@ struct string_parser {
         }
 
 
-        while (eof())
+        while (!eof())
         {
+
             // get next character
             switch (get())
             {

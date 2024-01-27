@@ -14,7 +14,7 @@ endif
 
 all : $(TARGET)
 
-$(TARGET) : minijson.h
+$(TARGET) : main.cxx minijson.h 
 	clang++ -o $@ main.cxx
 
 clean :
