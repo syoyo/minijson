@@ -48,6 +48,7 @@ Modification by Syoyo Fujita.
 
 ## TODO
 
+* [ ] Pretty print
 * [x] Unicode escape sequence and other escape characters.
   * Thanks to nlohmann json's scan_string()
 * [ ] Harden parse() API
