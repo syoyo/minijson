@@ -19,6 +19,7 @@
 #include <cstring>
 #else
 
+namespace minijson {
 namespace simdjson {
 namespace internal {
 
@@ -29,6 +30,7 @@ char *to_chars(char *first, const char *last, double value);
 
 }  // namespace internal
 }  // namespace simdjson
+} // namespace minijson
 
 #endif
 
@@ -1611,6 +1613,7 @@ const char *my_strchr(const char *p, int ch) {
 #include <cstring>
 #include <limits>
 
+namespace minijson {
 namespace simdjson {
 namespace internal {
 
@@ -2223,7 +2226,9 @@ double from_chars(const char *first, const char *end) noexcept {
 
 }  // namespace internal
 }  // namespace simdjson
+}  // namespace minijson
 
+namespace minijson {
 namespace simdjson {
 namespace internal {
 /*!
@@ -3172,6 +3177,7 @@ char *to_chars(char *first, const char *last, double value) {
 }
 }  // namespace internal
 }  // namespace simdjson
+} // namespace minijson
 
 #endif  // !MINIJSON_USE_STRTOD
 
