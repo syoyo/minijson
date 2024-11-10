@@ -9,6 +9,7 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include <cstdint>
 
 //#define __MINIJSON_LIBERAL
 
@@ -1612,6 +1613,7 @@ const char *my_strchr(const char *p, int ch) {
 
 #include <cstring>
 #include <limits>
+#include <array>
 
 namespace minijson {
 namespace simdjson {
