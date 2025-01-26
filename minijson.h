@@ -139,7 +139,7 @@ struct string_parser {
 
   void reset() {
     if (_input.size()) {
-      current = _input[0];
+      current = static_cast<unsigned char>(_input[0]);
     } else {
       current = '\0';
     }
@@ -151,7 +151,7 @@ struct string_parser {
   unsigned char get() {
     if ((curr_idx + 1) < _input.size()) {
       curr_idx++;
-      current = _input[curr_idx];
+      current = static_cast<unsigned char>(_input[curr_idx]);
       return current;
     }
     current = '\0';
@@ -170,11 +170,11 @@ struct string_parser {
     return false;
   }
 
-  void add(const unsigned char c) { token_buffer += c; }
+  void add(const unsigned char c) { token_buffer += static_cast<char>(c); }
 
   void add(const int i) {
     // use lower 8bit
-    token_buffer += static_cast<unsigned char>(i & 0xff);
+    token_buffer += static_cast<char>(i & 0xff);
   }
 
   int get_codepoint();
